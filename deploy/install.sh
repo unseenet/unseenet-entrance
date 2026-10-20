@@ -71,7 +71,9 @@ grep -q '^%include /etc/tor/torrc.d' /etc/tor/torrc || echo '%include /etc/tor/t
 systemctl enable -q tor
 if systemctl is-active -q tor@default || systemctl is-active -q tor; then
   # others may use this Tor: reload keeps their circuits
-  tor --verify-config -f /etc/tor/torrc >/dev/null || { echo "!! Tor rejects the new settings"; exit 1; }
+  TORUSER=$(id -un debian-tor 2>/dev/null || id -un _tor 2>/dev/null || echo root)
+  runuser -u "$TORUSER" -- tor --verify-config -f /etc/tor/torrc >/dev/null ||
+    { echo "!! Tor rejects the new settings"; exit 1; }
   systemctl reload tor@default 2>/dev/null || systemctl reload tor
 else
   systemctl restart tor
