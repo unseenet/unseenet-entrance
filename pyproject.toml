@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unseenet-entrance"
+dynamic = ["version"]
+description = "A web entrance to Unseenet: lets a browser in over Tor (UN-RFC 0043)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = ["aiohttp>=3.9", "python-socks[asyncio]>=2.4"]
+
+[project.scripts]
+unseenet-entrance = "unseenet_entrance.server:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "unseenet_entrance.__version__"}
+
+[tool.setuptools.package-data]
+unseenet_entrance = ["nodes.json"]
