@@ -11,7 +11,14 @@
 #                       that fails, plain HTTP on port 8043 and an explanation
 #   TLS=domain:NAME     a normal Let's Encrypt certificate for NAME (point NAME here first)
 #   TLS=none            plain HTTP on port 8043 (a LAN test, or your own proxy in front)
-# Ports 80 and 443 must be open to the internet for the first two.
+# Ports 80 and 443 must be open to the internet for the first two. On a machine
+# whose own firewall rejects them (Oracle Cloud's images do), they are opened.
+#
+# On a machine that runs other things too:
+#   JOURNAL=keep        leave the system journal as it is (the entrance itself
+#                       logs nothing about visitors either way)
+# A Tor that is already running is reloaded, not restarted, so its other users
+# keep their circuits.
 #
 # Also sets up Tor (SOCKS for the tunnels and an onion address for the entrance),
 # builds the web client (unseenet-gui in the browser), and runs the entrance as
@@ -62,14 +69,24 @@ HiddenServicePort 80 127.0.0.1:8043
 EOF
 grep -q '^%include /etc/tor/torrc.d' /etc/tor/torrc || echo '%include /etc/tor/torrc.d/*.conf' >> /etc/tor/torrc
 systemctl enable -q tor
-systemctl restart tor
+if systemctl is-active -q tor@default || systemctl is-active -q tor; then
+  # others may use this Tor: reload keeps their circuits
+  tor --verify-config -f /etc/tor/torrc >/dev/null || { echo "!! Tor rejects the new settings"; exit 1; }
+  systemctl reload tor@default 2>/dev/null || systemctl reload tor
+else
+  systemctl restart tor
+fi
 for i in $(seq 1 60); do [ -f /var/lib/tor/unseenet-entrance/hostname ] && break; sleep 1; done
 ONION=$(cat /var/lib/tor/unseenet-entrance/hostname 2>/dev/null || echo "")
 
-echo "== journal in memory only"
-mkdir -p /etc/systemd/journald.conf.d
-printf '[Journal]\nStorage=volatile\nRuntimeMaxUse=16M\n' > /etc/systemd/journald.conf.d/unseenet-entrance.conf
-systemctl restart systemd-journald
+if [ "${JOURNAL:-}" = keep ]; then
+  echo "== journal left as it is (JOURNAL=keep)"
+else
+  echo "== journal in memory only"
+  mkdir -p /etc/systemd/journald.conf.d
+  printf '[Journal]\nStorage=volatile\nRuntimeMaxUse=16M\n' > /etc/systemd/journald.conf.d/unseenet-entrance.conf
+  systemctl restart systemd-journald
+fi
 
 # setting NAME VALUE: set or add a line in the settings file
 setting() {
@@ -132,8 +149,22 @@ plain_http() {
   systemctl restart unseenet-entrance
 }
 
+# Open ports 80 and 443 in this machine's own firewall when it rejects them
+# (Oracle Cloud's Ubuntu images do). The cloud's own firewall is separate.
+open_ports() {
+  command -v iptables >/dev/null || return 0
+  iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited 2>/dev/null || return 0
+  for port in 443 80; do
+    iptables -C INPUT -p tcp -m state --state NEW -m tcp --dport $port -j ACCEPT 2>/dev/null ||
+      iptables -I INPUT 5 -p tcp -m state --state NEW -m tcp --dport $port -j ACCEPT
+  done
+  command -v netfilter-persistent >/dev/null && netfilter-persistent save >/dev/null 2>&1
+  echo "== opened ports 80 and 443 in this machine's firewall"
+}
+
 # Ask Let's Encrypt for a certificate. $1: "ip" or "domain", $2: the address or name.
 get_certificate() {
+  open_ports
   echo "== certbot"
   [ -x "$CERTBOT" ] || { python3 -m venv /opt/certbot && /opt/certbot/bin/pip install -q "certbot>=5.6"; }
   mkdir -p "$ACME" "$TLSDIR"
