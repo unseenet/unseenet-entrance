@@ -6,7 +6,11 @@
 //  - opens and saves the vault as a file (section 6.2).
 (() => {
   "use strict";
-  const worker = new Worker("/worker.js", { type: "module" });
+  // FILE: the client in a file (UN-RFC 0043 8.7) - set by the build, with the signed list
+  const FILE = window.UNSEENET_FILE || null;
+  let worker = null;
+  const early = [];                // messages for the worker before it exists
+  const toWorker = (msg, transfer = []) => (worker ? worker.postMessage(msg, transfer) : early.push([msg, transfer]));
   const pending = new Map();
   const sockets = new Set();
   let nextId = 1, booted = false, vaultDirty = false, bootText = "Starting ...";
@@ -14,10 +18,10 @@
   const call = (msg, transfer = []) => new Promise((resolve) => {
     const id = nextId++;
     pending.set(id, resolve);
-    worker.postMessage({ ...msg, id }, transfer);
+    toWorker({ ...msg, id }, transfer);
   });
 
-  worker.onmessage = (e) => {
+  function onWorker(e) {
     const m = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
     if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
     if (m.type === "event") {
@@ -32,7 +36,70 @@
     } else if (m.type === "fatal") {
       bootText = "The client could not start: " + m.text; updateBoot(true);
     }
+  }
+
+  function startWorker(w, init, transfer = []) {
+    worker = w;
+    worker.onmessage = onWorker;
+    worker.onerror = (e) => { bootText = "The client could not start: " + (e.message || "the worker failed to load"); updateBoot(true); };
+    worker.postMessage({ type: "init", ...init }, transfer);
+    for (const [msg, tr] of early.splice(0)) worker.postMessage(msg, tr);
+  }
+
+  // --- the client in a file: the worker and its files come from this page --
+  const fileBytes = async (name) => {
+    const s = document.querySelector(`script[data-file="${name}"]`);
+    if (!s) throw new Error("this file is incomplete: " + name);
+    return (await realFetchEarly("data:application/octet-stream;base64," + s.textContent.trim())).arrayBuffer();
   };
+  const realFetchEarly = window.fetch.bind(window);
+  const blobURL = (buf, type) => URL.createObjectURL(new Blob([buf], { type }));
+  let entrance = null;            // the entrance in use (FILE only)
+
+  async function pickEntrance() {
+    const verify = __m.entrances.verifyBundle;
+    let list;
+    try { list = FILE.owner ? verify(FILE.bundle, FILE.owner, FILE.group) : verify(FILE.bundle); }
+    catch (err) { throw new Error("the list of entrances in this file cannot be trusted: " + err.message); }
+    const candidates = list.entrances.filter((x) => x.url);
+    const answers = await Promise.all(candidates.map(async (x) => {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 8000);
+      try { return (await realFetchEarly(new URL(".well-known/unseenet-entrance", x.url), { signal: ctl.signal })).ok ? x : null; }
+      catch { return null; } finally { clearTimeout(t); }
+    }));
+    const ok = answers.filter(Boolean);
+    if (!ok.length) throw new Error("no entrance in this file's list answers. Is this network blocking them? Try again later, or get a newer file.");
+    return ok[Math.floor(Math.random() * ok.length)];
+  }
+
+  async function startFromFile() {
+    bootText = "Looking for an entrance that answers ..."; updateBoot();
+    entrance = await pickEntrance();
+    updateBar();
+    bootText = "Unpacking the client ..."; updateBoot();
+    const names = FILE.files;
+    const files = {};
+    const transfer = [];
+    for (const n of names) { files[n] = await fileBytes(n); transfer.push(files[n]); }
+    // from a data: URL: browsers refuse module workers from blobs made by a file on disk
+    const src = new TextDecoder().decode(files["worker.js"])
+      .replace(/^import \{ loadPyodide as servedPyodide \}.*$/m, "const servedPyodide = null;")
+      .replace(/^const HERE = import\.meta\.url;.*$/m, "const HERE = self.location.href;");
+    delete files["worker.js"];
+    const ws = new URL("onntp", entrance.url);
+    ws.protocol = ws.protocol === "https:" ? "wss:" : "ws:";
+    startWorker(new Worker("data:text/javascript;charset=utf-8," + encodeURIComponent(src), { type: "module" }),
+      { files, entrance: ws.href }, Object.values(files));
+  }
+
+  if (FILE) {
+    document.addEventListener("DOMContentLoaded", () => startFromFile().catch((err) => {
+      bootText = "The client could not start: " + err.message; updateBoot(true);
+    }));
+  } else {
+    startWorker(new Worker("/worker.js", { type: "module" }), {});
+  }
 
   // --- the API, answered by the worker ------------------------------------
   const realFetch = window.fetch.bind(window);
@@ -69,7 +136,8 @@
   }
   window.WebSocket = function (url, protocols) {
     const u = new URL(url, location.href);
-    if (u.host === location.host && u.pathname === "/api/events") return new EventSocket();
+    const ours = [].concat(protocols || []).includes("unseenet");     // the client's event stream
+    if (ours || (u.host === location.host && u.pathname === "/api/events")) return new EventSocket();
     return new RealWebSocket(url, protocols);
   };
   Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
@@ -113,6 +181,10 @@
   }
   function updateBar() {
     if (!bar) return;
+    if (FILE && entrance) {
+      bar.querySelector(".uw-text").textContent = onion ? "" :
+        `Open web, through ${entrance.name} - it can see your IP address.`;
+    }
     const unlocked = typeof S !== "undefined" && S.state && S.state.unlocked;
     bar.querySelector(".uw-open").hidden = !!unlocked;
     const save = bar.querySelector(".uw-save");
@@ -140,7 +212,7 @@
         ...rows.map(([a, b, c]) => el("tr", {}, el("td", {}, a), el("td", {}, b), el("td", { class: c.startsWith("Yes") || c.startsWith("Every") || c.startsWith("This") ? "uw-warn" : "" }, c)))),
       el("p", {}, "Your vault lives only in this tab. Save it as a file to use it again, and keep the file like a password. If you need to hide that you use Unseenet, or who you are, use the real client from unseenet.org."),
       el("p", {}, "If this entrance is ever blocked: ",
-        el("a", { href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "save the list of entrances"),
+        el("a", { href: (FILE && entrance ? entrance.url : "/") + "unseenet-entrances.html", download: "unseenet-entrances.html" }, "save the list of entrances"),
         " - a small file that finds another one, from your own disk. Send it to friends too."),
       el("form", { method: "dialog" }, el("button", { class: "uw-btn" }, "Close")));
     document.body.append(d);
@@ -154,7 +226,8 @@
     bar = el("div", { class: "uw-bar" + (onion ? " uw-tor" : ""), role: "status" },
       el("span", { class: "uw-text" }, onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address."),
       el("button", { class: "uw-link", on: { onclick: aboutDialog } }, "What does that mean?"),
-      el("a", { class: "uw-link", href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "Other entrances"),
+      FILE ? el("button", { class: "uw-link", on: { onclick: () => { if (!vaultDirty || confirm("Your vault has changes you have not saved. Leave anyway?")) location.reload(); } } }, "Another entrance")
+        : el("a", { class: "uw-link", href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "Other entrances"),
       el("span", { class: "uw-grow" }),
       el("button", { class: "uw-btn uw-open", on: { onclick: () => file.click() } }, "Open vault file"),
       el("button", { class: "uw-btn uw-save", on: { onclick: saveVault } }, "Save vault file"),

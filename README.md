@@ -39,6 +39,19 @@ against the project key, shows which entrances answer, opens a random one
 that does, and can fetch a newer list and save itself again. The web client
 links to it ("Other entrances"). See UN-RFC 0043 section 8.
 
+### The client in a file
+
+`python3 tools/build_web.py --file-from https://an.entrance/` also builds
+`web/unseenet-web.html`: the whole web client - the GUI page, Python, the core
+and the signed list of entrances - in one file of about 19 MB. Opened from
+disk it checks the list, picks an entrance that answers and uses it only as a
+tunnel; no page is served, so neither a blocked domain nor a changed page
+matters while the file itself is genuine. It runs in Chromium and Firefox.
+
+(Browsers refuse module workers from blobs made by a file on disk, so the
+worker starts from a `data:` URL and Pyodide gets its files through a `fetch`
+that the worker answers itself.)
+
 ## What you get - and what you give up
 
 Groups and nodes still cannot be removed by anyone, and nobody can delete or

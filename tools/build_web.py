@@ -194,6 +194,55 @@ def build_jump(owner: str | None, group: str | None) -> None:
     print(f"jump page template: {len(html) // 1024} KiB")
 
 
+# --- the client in a file (UN-RFC 0043 section 8.7) ----------------------------
+
+FILE_MODULES = [JS / "vendor" / "noble.js", JS / "encoding.js", JS / "article.js", JS / "entrances.js"]
+
+
+def build_file(bundle_from: str, owner: str | None, group: str | None) -> Path:
+    """One HTML file: the GUI page, Pyodide, the core and the signed list of
+    entrances. Opened from disk, it uses an entrance only as a tunnel."""
+    import base64
+    bundle = json.loads(urllib.request.urlopen(
+        bundle_from.rstrip("/") + "/.well-known/unseenet-entrances.json", timeout=30).read())
+    if not bundle.get("manifest"):
+        sys.exit(f"{bundle_from} has no copy of the list of entrances yet")
+    static = WEB / "static"
+    icon = lambda n: "data:image/svg+xml;base64," + base64.b64encode((static / n).read_bytes()).decode()  # noqa: E731
+    app_js = (static / "app.js").read_text()
+    for n in ("icon.svg", "icon-ink.svg"):
+        app_js = app_js.replace(f'"/static/{n}"', json.dumps(icon(n)))
+    safe = lambda s: s.replace("</script", "<\\/script")            # noqa: E731
+    modules = bundle_modules(FILE_MODULES).replace("import.meta.url", "self.location.href")
+    files = {p.name: p for p in sorted((WEB / "pyodide").iterdir()) if p.is_file()}
+    files["bundle.zip"] = WEB / "py" / "bundle.zip"
+    files["worker.js"] = WEB / "worker.js"
+    conf = {"bundle": bundle, "files": sorted(files)}
+    if owner and group:
+        conf.update(owner=owner, group=group)
+    parts = ["<!doctype html>", '<html lang="en">', "<head>", '<meta charset="utf-8">',
+             '<meta name="viewport" content="width=device-width, initial-scale=1">',
+             '<meta name="referrer" content="no-referrer">',
+             "<title>Unseenet</title>",
+             f'<link rel="icon" href="{icon("icon.svg")}" type="image/svg+xml">',
+             f"<style>\n{(static / 'app.css').read_text()}\n{(WEB / 'entrance.css').read_text()}\n</style>",
+             f"<script>window.UNSEENET_FILE = {safe(json.dumps(conf))};</script>",
+             f"<script>\n{safe(modules)}\n</script>",
+             f"<script>\n{safe((WEB / 'shim.js').read_text())}\n</script>",
+             "</head>", "<body>",
+             "<noscript>Unseenet needs JavaScript. Everything runs here, in this file.</noscript>",
+             '<div id="root"></div>',
+             f"<script>\n{safe(app_js)}\n</script>"]
+    for name, path in sorted(files.items()):
+        parts.append(f'<script type="application/octet-stream" data-file="{name}">'
+                     f"{base64.b64encode(path.read_bytes()).decode()}</script>")
+    parts += ["</body>", "</html>"]
+    out = WEB / "unseenet-web.html"
+    out.write_text("\n".join(parts))
+    print(f"client in a file: {out.stat().st_size // (1024 * 1024)} MiB")
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--core", help="unseenet checkout (default: clone from GitHub)")
@@ -201,6 +250,8 @@ def main() -> None:
     ap.add_argument("--list-owner", help="test only: trust this key's list instead of the project's")
     ap.add_argument("--list-group", help="test only: the group of that list")
     ap.add_argument("--jump-only", action="store_true", help="build only the jump page")
+    ap.add_argument("--file-from", metavar="ENTRANCE",
+                    help="also build the client in a file, with the signed list from this entrance")
     args = ap.parse_args()
     build_jump(args.list_owner, args.list_group)
     if args.jump_only:
@@ -211,6 +262,8 @@ def main() -> None:
         build_page(gui)
         build_pyodide()
         build_bundle(core, gui)
+    if args.file_from:
+        build_file(args.file_from, args.list_owner, args.list_group)
     print("web client built in", WEB)
 
 

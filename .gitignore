@@ -8,3 +8,4 @@ web/static/
 web/pyodide/
 web/py/bundle.zip
 web/unseenet-entrances.template.html
+web/unseenet-web.html
