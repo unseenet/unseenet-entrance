@@ -18,6 +18,7 @@ under a key made at start and never written down.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -35,6 +36,7 @@ from python_socks import ProxyError
 from python_socks.async_.asyncio import Proxy
 
 from . import __version__
+from .listfetch import PROJECT_GROUP, ListCache, keep_fresh
 
 mimetypes.add_type("text/javascript", ".mjs")
 mimetypes.add_type("application/wasm", ".wasm")
@@ -65,6 +67,7 @@ class Config:
     http_port: int = 0                       # plain HTTP: ACME challenges and a redirect to HTTPS
     acme_dir: Path | None = None             # where certbot --webroot puts its challenges
     onion_port: int = 0                      # plain HTTP on 127.0.0.1 for the onion service
+    list_group: str = PROJECT_GROUP          # the signed list of entrances (UN-RFC 0043 8.1)
     info: dict = field(default_factory=dict)  # /.well-known/unseenet-entrance
 
     @classmethod
@@ -87,6 +90,7 @@ class Config:
             c.tls_cert, c.tls_key = Path(e("ENTRANCE_TLS_CERT")), Path(e("ENTRANCE_TLS_KEY"))
         c.http_port = int(e("ENTRANCE_HTTP_PORT", c.http_port))
         c.onion_port = int(e("ENTRANCE_ONION_PORT", c.onion_port))
+        c.list_group = e("ENTRANCE_LIST_GROUP", c.list_group)
         if e("ENTRANCE_ACME_DIR"):
             c.acme_dir = Path(e("ENTRANCE_ACME_DIR"))
         c.info = {
@@ -250,7 +254,7 @@ async def headers(request: web.Request, handler):
         if request.path == "/worker.js":
             resp.headers["Content-Security-Policy"] = WORKER_CSP
         for k, v in SECURITY_HEADERS.items():
-            resp.headers.setdefault(k, v)
+            resp.headers.setdefault(k, v)            # the jump page sets its own policy
         if request.path.startswith("/.well-known/"):
             resp.headers["Access-Control-Allow-Origin"] = "*"     # UN-RFC 0043 8.7
         resp.headers.setdefault("Cache-Control", "no-cache")
@@ -262,11 +266,32 @@ async def entrance_info(request: web.Request) -> web.Response:
 
 
 async def entrances_list(request: web.Request) -> web.Response:
-    # The signed list (unseenet.entrances, UN-RFC 0043 8.1) does not exist yet;
-    # until it does, an entrance lists only itself, unsigned.
-    cfg: Config = request.app["cfg"]
-    me = {**cfg.info, "url": f"{request.scheme}://{request.host}/"}
-    return web.json_response({"v": 0, "signed": False, "entrances": [me]})
+    """The signed list of entrances, as the network has it (UN-RFC 0043 8.2)."""
+    return web.json_response(request.app["list"].bundle())
+
+
+JUMP_TEMPLATE = "unseenet-entrances.template.html"
+BUNDLE_MARK = '<script type="application/json" id="unseenet-bundle">null</script>'
+
+
+async def jump_page(request: web.Request) -> web.Response:
+    """The jump page with today's signed list in it - a file to keep (UN-RFC 0043 8.7)."""
+    tpl = request.app["cfg"].web_dir / JUMP_TEMPLATE
+    if not tpl.is_file():
+        raise web.HTTPNotFound()
+    text = tpl.read_text()
+    m = re.search(r'<script type="module" id="jump">(.*?)</script>', text, re.S)
+    if not m:
+        raise web.HTTPNotFound()
+    digest = base64.b64encode(hashlib.sha256(m.group(1).encode()).digest()).decode()
+    bundle = json.dumps(request.app["list"].bundle()).replace("</", "<\\/")
+    html = text.replace(BUNDLE_MARK, BUNDLE_MARK.replace("null", bundle))
+    return web.Response(text=html, content_type="text/html", headers={
+        "Content-Disposition": 'inline; filename="unseenet-entrances.html"',
+        # its own script only; it asks other entrances whether they answer
+        "Content-Security-Policy": (f"default-src 'none'; script-src 'sha256-{digest}'; "
+                                    "style-src 'unsafe-inline'; connect-src https: http:; "
+                                    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")})
 
 
 async def nodes_json(request: web.Request) -> web.Response:
@@ -290,10 +315,12 @@ def make_app(cfg: Config) -> web.Application:
     app["cfg"] = cfg
     app["limits"] = Limits(cfg.max_per_visitor, cfg.max_total)
     app["allowed"] = cfg.allowed_nodes()
+    app["list"] = ListCache(cfg.list_group)
     app.router.add_get("/onntp", onntp)
     app.router.add_get("/.well-known/unseenet-entrance", entrance_info)
     app.router.add_get("/.well-known/unseenet-entrances.json", entrances_list)
     app.router.add_get("/nodes.json", nodes_json)
+    app.router.add_get("/unseenet-entrances.html", jump_page)
     app.router.add_get("/{path:.*}", static)
     return app
 
@@ -347,8 +374,13 @@ def make_http_app(cfg: Config) -> web.Application:
 async def serve(cfg: Config) -> None:
     runners = []
     ctx = tls_context(cfg) if cfg.tls_cert else None
-    runner = web.AppRunner(make_app(cfg), access_log=None)
+    app = make_app(cfg)
+    runner = web.AppRunner(app, access_log=None)
     await runner.setup()
+    nodes = sorted(app["allowed"]) if app["allowed"] else []
+    if nodes:
+        asyncio.get_running_loop().create_task(
+            keep_fresh(app["list"], nodes, cfg.socks_host, cfg.socks_port))
     await web.TCPSite(runner, cfg.host, cfg.port, ssl_context=ctx).start()
     runners.append(runner)
     if cfg.onion_port:      # Tor delivers onion visitors here; never on another interface

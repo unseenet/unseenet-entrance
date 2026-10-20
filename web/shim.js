@@ -139,6 +139,9 @@
       el("table", {}, el("tr", {}, el("th"), el("th", {}, "Real client"), el("th", {}, "This page")),
         ...rows.map(([a, b, c]) => el("tr", {}, el("td", {}, a), el("td", {}, b), el("td", { class: c.startsWith("Yes") || c.startsWith("Every") || c.startsWith("This") ? "uw-warn" : "" }, c)))),
       el("p", {}, "Your vault lives only in this tab. Save it as a file to use it again, and keep the file like a password. If you need to hide that you use Unseenet, or who you are, use the real client from unseenet.org."),
+      el("p", {}, "If this entrance is ever blocked: ",
+        el("a", { href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "save the list of entrances"),
+        " - a small file that finds another one, from your own disk. Send it to friends too."),
       el("form", { method: "dialog" }, el("button", { class: "uw-btn" }, "Close")));
     document.body.append(d);
     d.showModal();
@@ -151,6 +154,7 @@
     bar = el("div", { class: "uw-bar" + (onion ? " uw-tor" : ""), role: "status" },
       el("span", { class: "uw-text" }, onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address."),
       el("button", { class: "uw-link", on: { onclick: aboutDialog } }, "What does that mean?"),
+      el("a", { class: "uw-link", href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "Other entrances"),
       el("span", { class: "uw-grow" }),
       el("button", { class: "uw-btn uw-open", on: { onclick: () => file.click() } }, "Open vault file"),
       el("button", { class: "uw-btn uw-save", on: { onclick: saveVault } }, "Save vault file"),

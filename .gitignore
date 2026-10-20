@@ -7,3 +7,4 @@ web/index.html
 web/static/
 web/pyodide/
 web/py/bundle.zip
+web/unseenet-entrances.template.html

@@ -19,6 +19,7 @@ standard library, so it runs on a fresh server.
 from __future__ import annotations
 
 import argparse
+import re
 import hashlib
 import io
 import json
@@ -133,11 +134,77 @@ def build_page(gui: Path) -> None:
     (WEB / "index.html").write_text(html)
 
 
+# --- the jump page: one file, no imports (UN-RFC 0043 section 8.7) ------------
+
+JS = ROOT / "js"
+JUMP_MODULES = [JS / "vendor" / "noble.js", JS / "encoding.js", JS / "article.js",
+                JS / "entrances.js", ROOT / "jump" / "jump.js"]
+_IMPORT = re.compile(r'^import\s*\{([^}]*)\}\s*from\s*"([^"]+)";?\s*$', re.M)
+_EXPORT_DECL = re.compile(r"^export\s+((?:async\s+)?function\*?|const|let|class)\s+([A-Za-z_$][\w$]*)", re.M)
+_EXPORT_LIST = re.compile(r"export\s*\{([^}]*)\};?")
+
+
+def _module_key(path: str) -> str:
+    return Path(path).stem
+
+
+def bundle_modules(files: list[Path]) -> str:
+    """Join ES modules into one script, each in its own scope (a tiny bundler)."""
+    out = ["const __m = {};"]
+    for f in files:
+        code = f.read_text()
+        names: list[tuple[str, str]] = []           # (exported name, local name)
+
+        def imp(m):
+            parts = []
+            for item in m.group(1).split(","):
+                item = item.strip()
+                if not item:
+                    continue
+                src, _, alias = item.partition(" as ")
+                parts.append(f"{src.strip()}: {alias.strip()}" if alias else src.strip())
+            return f"const {{ {', '.join(parts)} }} = __m[{_module_key(m.group(2))!r}];"
+        code = _IMPORT.sub(imp, code)
+
+        def decl(m):
+            names.append((m.group(2), m.group(2)))
+            return m.group(1) + " " + m.group(2)
+        code = _EXPORT_DECL.sub(decl, code)
+
+        def lst(m):
+            for item in m.group(1).split(","):
+                item = item.strip()
+                if item:
+                    local, _, exported = item.partition(" as ")
+                    names.append(((exported or local).strip(), local.strip()))
+            return ""
+        code = _EXPORT_LIST.sub(lst, code)
+        exports = ", ".join(f"{e}: {l}" for e, l in names)
+        out.append(f"__m[{_module_key(str(f))!r}] = (() => {{\n{code}\nreturn {{ {exports} }};\n}})();")
+    return "\n".join(out)
+
+
+def build_jump(owner: str | None, group: str | None) -> None:
+    html = (ROOT / "jump" / "jump.html").read_text()
+    script = bundle_modules(JUMP_MODULES).replace("</script", "<\\/script")
+    html = html.replace("<!--JUMP-SCRIPT-->", f'<script type="module" id="jump">\n{script}\n</script>')
+    if owner and group:          # a test list instead of the project's (never in a release)
+        html = html.replace('data-owner="" data-group=""', f'data-owner="{owner}" data-group="{group}"')
+    (WEB / "unseenet-entrances.template.html").write_text(html)
+    print(f"jump page template: {len(html) // 1024} KiB")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--core", help="unseenet checkout (default: clone from GitHub)")
     ap.add_argument("--gui", help="unseenet-gui checkout (default: clone from GitHub)")
+    ap.add_argument("--list-owner", help="test only: trust this key's list instead of the project's")
+    ap.add_argument("--list-group", help="test only: the group of that list")
+    ap.add_argument("--jump-only", action="store_true", help="build only the jump page")
     args = ap.parse_args()
+    build_jump(args.list_owner, args.list_group)
+    if args.jump_only:
+        return
     with tempfile.TemporaryDirectory() as tmp:
         core = source("core", args.core, Path(tmp))
         gui = source("gui", args.gui, Path(tmp))

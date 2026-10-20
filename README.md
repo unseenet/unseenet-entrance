@@ -29,6 +29,16 @@ browser ─ page (unseenet-gui, unchanged) ─ shim.js ─ worker: Python + unse
                                                      entrance ── Tor ── node (.onion)
 ```
 
+## When an entrance is blocked
+
+Every entrance serves the project's signed list of entrances, fetched from the
+network over Tor (`/.well-known/unseenet-entrances.json`), and the **jump
+page** `/unseenet-entrances.html` - one small file with that list inside. Keep
+it, or send it to someone: opened from disk it checks the list's signatures
+against the project key, shows which entrances answer, opens a random one
+that does, and can fetch a newer list and save itself again. The web client
+links to it ("Other entrances"). See UN-RFC 0043 section 8.
+
 ## What you get - and what you give up
 
 Groups and nodes still cannot be removed by anyone, and nobody can delete or

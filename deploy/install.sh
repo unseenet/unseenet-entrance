@@ -42,7 +42,12 @@ rm -rf "$APP.new/.venv" "$APP.new/.git"
 python3 -m venv "$APP.new/.venv"
 "$APP.new/.venv/bin/pip" install -q --upgrade pip
 "$APP.new/.venv/bin/pip" install -q "$APP.new"
-python3 "$APP.new/tools/build_web.py"
+# LIST_OWNER / LIST_GROUP: test only - trust a lab list of entrances instead of the project's
+if [ -n "${LIST_OWNER:-}" ] && [ -n "${LIST_GROUP:-}" ]; then
+  python3 "$APP.new/tools/build_web.py" --list-owner "$LIST_OWNER" --list-group "$LIST_GROUP"
+else
+  python3 "$APP.new/tools/build_web.py"
+fi
 rm -rf "$APP.old"; [ -d "$APP" ] && mv "$APP" "$APP.old"; mv "$APP.new" "$APP"
 chown -R root:root "$APP"
 
@@ -85,6 +90,7 @@ ENTRANCE_TRUST_FORWARDED=0
 EOF
 fi
 setting ENTRANCE_WEB_DIR "$APP/web"
+if [ -n "${LIST_GROUP:-}" ]; then setting ENTRANCE_LIST_GROUP "$LIST_GROUP"; fi
 setting ENTRANCE_ONION "$ONION"
 
 echo "== service"

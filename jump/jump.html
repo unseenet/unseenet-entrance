@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-owner="" data-group="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Unseenet entrances</title>
+<style>
+:root { --ink: #10302a; --paper: #f4f8f6; --line: #c9e2d9; --green: #0f7a54; --amber: #8a5a00; --red: #b3261e; --muted: #4c6b62; }
+@media (prefers-color-scheme: dark) { :root { --ink: #e8f3ef; --paper: #10302a; --line: #24493f; --green: #34d399; --amber: #f5c26b; --red: #f19a8f; --muted: #9cc3b6; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+.lead { margin: 0 0 16px; }
+.muted { color: var(--muted); font-size: 13px; }
+.trust { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); font-weight: 600; margin: 12px 0; }
+.trust.ok { color: var(--green); }
+.trust.bad { color: var(--red); }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+td { padding: 10px 6px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+a { color: var(--green); }
+.st { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.st.yes { color: var(--green); } .st.no { color: var(--red); } .st.checking, .st.onion { color: var(--muted); }
+button { font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+button.primary { background: var(--green); border-color: var(--green); color: #fff; width: 100%; padding: 14px; font-size: 16px; }
+button:disabled { opacity: .55; cursor: default; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 20px; font-size: 14px; }
+code { font-family: ui-monospace, Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Unseenet entrances</h1>
+  <p class="lead">Keep this file. If the entrance you use is blocked, open it and pick another one - or send it to a friend. It works from your own disk.</p>
+  <div id="trust" class="trust">Checking the list …</div>
+  <button id="random" class="primary" disabled>Waiting for an entrance to answer …</button>
+  <table><tbody id="rows"></tbody></table>
+  <div class="row">
+    <button id="update">Look for a newer list</button>
+    <button id="save" hidden>Save this file again</button>
+  </div>
+  <div class="box">
+    <b>Is this file genuine?</b> It trusts only lists signed by the key with fingerprint
+    <code id="fp"></code>. Compare it with the one on <a href="https://unseenet.org" rel="noreferrer">unseenet.org</a>
+    or from someone you trust. A copy from a stranger may have been changed; the safe copy is the one in a signed release.
+  </div>
+  <div class="box muted">
+    Entrances on the open web can see your IP address. The <b>.onion</b> addresses work in Tor Browser,
+    and then the entrance cannot see who you are. If you need to hide that you use Unseenet, use the
+    real client from unseenet.org instead.
+  </div>
+</main>
+<script type="application/json" id="unseenet-bundle">null</script>
+<!--JUMP-SCRIPT-->
+</body>
+</html>
