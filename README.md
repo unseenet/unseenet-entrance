@@ -2,22 +2,32 @@
 
 <h1 align="center">unseenet-entrance</h1>
 
-<p align="center"><b>A web entrance to <a href="https://unseenet.org">Unseenet</a>: read, post and chat from an ordinary browser.</b></p>
+<p align="center"><b>A web entrance to <a href="https://unseenet.org">Unseenet</a>: the graphical client in an ordinary browser.</b></p>
 
-> **Pre-alpha, first draft.** Neither this nor the Unseenet core has had a
-> security review. It is the less hidden way in, on purpose - see below.
+> **Pre-alpha.** Neither this nor the Unseenet core has had a security
+> review. It is the less hidden way in, on purpose - see below.
 
 A **web entrance** ([UN-RFC 0043](https://unseenet.org/spec/un-rfc-0043/)) lets
-someone use Unseenet without installing anything. This repository has two
-parts:
+someone use Unseenet without installing anything. It has two parts:
 
 - **The entrance** (`src/unseenet_entrance`) - a dumb tunnel. For each browser
   WebSocket it opens one connection over Tor to a node's onion service, on a
   Tor circuit of its own, and copies bytes both ways, unchanged. It only
   connects to known nodes, adds nothing, caches nothing and logs nothing.
-- **The web client** (`web/`) - everything with keys happens in the browser:
-  it makes your identity, checks every signature, signs your posts and pays
-  their proof-of-work. It loads nothing from anywhere else.
+- **The web client** - not a third client, but
+  [unseenet-gui](https://github.com/unseenet/unseenet-gui) itself. Its page is
+  served unchanged, and its backend - the real
+  [unseenet](https://github.com/unseenet/unseenet) core and the GUI's own
+  server code - runs in the browser, in WebAssembly
+  ([Pyodide](https://pyodide.org)) inside a Web Worker. So your vault, your
+  keys, signing, signature checks and postage all stay in your browser, and
+  every fix to the core or the GUI reaches the web too.
+
+```
+browser ─ page (unseenet-gui, unchanged) ─ shim.js ─ worker: Python + unseenet core + GUI backend
+                                                         │ WebSocket
+                                                     entrance ── Tor ── node (.onion)
+```
 
 ## What you get - and what you give up
 
@@ -27,46 +37,46 @@ and you trust the code it serves on every visit. The page says so at all
 times. If you need to hide that you use Unseenet, or who you are, use the
 [real client](https://unseenet.org) instead.
 
-## The first web client can
-
-- connect through the entrance to a node you pick, over Tor
-- list groups, show discussions as a thread tree and chat groups as a chat
-- check every post's signature (✓ signed / ✗ does not verify)
-- make a new identity in the browser, save and open it as a key file
-- write new posts, reply with a quote, and send chat lines, with postage
-  paid in a background worker
-
-Not yet: vaults (UN-RFC 0007), closed and moderated groups, private posts,
-the signed list of entrances, the pinned loader and the client in a file.
+Your vault lives only in the browser tab: **Open vault file** and **Save vault
+file** in the bar at the top move it to and from a file.
 
 ## Run an entrance
 
-On Debian 12/13 or Ubuntu 24.04+ (a free cloud VM is enough):
+On Debian 12/13 or Ubuntu 24.04+ (a free cloud VM is enough), with ports 80
+and 443 open to the internet:
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/unseenet/unseenet-entrance/main/deploy/install.sh
 sudo sh install.sh
 ```
 
-This installs Tor, gives the entrance an onion address, runs it as its own
-user with a journal kept in memory only, and listens on port 8043. Settings
-are in `/etc/unseenet-entrance.env`. For people on the open web you also need
-HTTPS: see [docs/certificates.md](docs/certificates.md). Never put it behind a
-CDN that ends TLS on someone else's machine (UN-RFC 0043 section 5).
+That installs Tor, gives the entrance an onion address, builds the web
+client, and gets a Let's Encrypt certificate for the machine's **public IP
+address** - no domain needed; the 6-day certificates renew by themselves.
+`TLS=domain:entrance.example.org` uses a name instead, `TLS=none` plain HTTP
+on port 8043 (a LAN test). See [docs/certificates.md](docs/certificates.md).
+Never put it behind a CDN that ends TLS on someone else's machine
+(UN-RFC 0043 section 5).
 
 ## Develop
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e .
-ENTRANCE_SOCKS=127.0.0.1:9050 .venv/bin/unseenet-entrance     # needs a running Tor
+python3 tools/build_web.py --core ../unseenet --gui ../unseenet-gui   # or without: clones from GitHub
+ENTRANCE_SOCKS=127.0.0.1:9050 .venv/bin/unseenet-entrance               # needs a running Tor
 # open http://127.0.0.1:8043/
-node --experimental-default-type=module tests/proto.test.mjs some-article.eml
 ```
 
-`tests/check_with_reference.py` checks an article made by the web client with
-the reference implementation in [unseenet](https://github.com/unseenet/unseenet).
+`tools/build_web.py` puts unseenet-gui's page, a pinned Pyodide (sha256-checked)
+and a zip of the Python code into `web/`; at run time nothing is loaded from
+anywhere else. `web/py/webbackend.py` is the only glue: the network goes
+through the entrance instead of Tor, work the core gives a thread runs inline,
+and the vault is a file in memory.
+
+`js/` holds a small JavaScript implementation of articles and ONNTP, used by
+the tests and for a future verifier (UN-RFC 0043 section 7.4).
 
 ## License
 
-Apache-2.0. `web/vendor/noble.js` bundles MIT-licensed code, see
-[web/vendor/README.md](web/vendor/README.md).
+Apache-2.0. `js/vendor/noble.js` bundles MIT-licensed code, see
+[js/vendor/README.md](js/vendor/README.md).

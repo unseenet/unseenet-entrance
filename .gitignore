@@ -3,3 +3,7 @@ __pycache__/
 *.egg-info/
 *.eml
 node_modules/
+web/index.html
+web/static/
+web/pyodide/
+web/py/bundle.zip

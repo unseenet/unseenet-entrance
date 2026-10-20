@@ -2,14 +2,34 @@
 
 A browser on the open web will only use an entrance over HTTPS (a page served
 over plain HTTP works, but anyone on the way can read and change it). That
-means a certificate. These are the ways to get one, best first, without paying
-and without handing TLS to someone else.
+means a certificate. These are the ways to get one, without paying and without
+handing TLS to someone else.
+
+## The default: a certificate for the IP address
+
+`deploy/install.sh` does this unless told otherwise. Since January 2026 Let's
+Encrypt issues certificates for bare IP addresses, so an entrance needs no
+domain at all:
+
+1. it finds the machine's public IP address (or takes `ENTRANCE_PUBLIC_IP`);
+2. the entrance answers Let's Encrypt's challenge on port 80;
+3. certbot (5.6 or newer, installed in `/opt/certbot`) gets a 6-day
+   certificate with the `shortlived` profile, without an e-mail address;
+4. a timer renews it twice a day when it has less than two days left (about
+   twice a week), and the entrance loads the new one without restarting.
+
+Visitors then open `https://203.0.113.7/`. Ports 80 and 443 must be open to
+the internet. If they are not, the script says so and runs plain HTTP on port
+8043 until you run it again.
+
+At home the IP address may change. The next renewal then fails; run the
+script again, or use a dynamic DNS name (below).
 
 ## 1. A domain name and Let's Encrypt
 
-If you have a domain (or a subdomain someone gives you), point it straight at
-the machine and let a web server fetch certificates for you. Caddy does it with
-no configuration beyond the name:
+Point the name straight at the machine, then
+`TLS=domain:entrance.example.org sh install.sh` does it with certbot. Or by
+hand, with Caddy in front of a plain (`TLS=none`) entrance:
 
 ```
 entrance.example.org {
@@ -29,14 +49,7 @@ No domain? A free dynamic DNS service (for example deSEC or DuckDNS) gives you
 a name that follows a changing home IP, and Let's Encrypt issues certificates
 for it like for any other name. This is the easy way for an entrance at home.
 
-## 3. A certificate for the bare IP address
-
-Since January 2026 Let's Encrypt also issues certificates for IP addresses.
-They last about six days and are renewed automatically, so they suit a cloud
-VM with a fixed address. Visitors then use `https://203.0.113.7/`. It is not
-pretty, but it needs no name at all.
-
-## 4. No certificate: the onion address and the client in a file
+## 3. No certificate: the onion address and the client in a file
 
 Every entrance also has an onion address. Tor Browser users need no
 certificate at all, and are hidden from the entrance too.

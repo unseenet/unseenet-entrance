@@ -1,5 +1,5 @@
 // The Unseenet article (UN-RFC 0002), identities (0003) and postage (0006).
-import { ed } from "../vendor/noble.js";
+import { ed } from "./vendor/noble.js";
 import { DS, H, b32, b32decode, b64, b64decode, concat, utf8, fromUtf8 } from "./encoding.js";
 
 export const PROTOCOL_VERSION = "1";

@@ -2,9 +2,9 @@
 // Run: node tests/proto.test.mjs <raw article files...>
 // Prints a signed test article (as base64) for tests/test_interop.py to check.
 import { readFileSync } from "node:fs";
-import { Article, Identity, manifestData, newArticle, MARKDOWN_TYPE, PURPOSE_ARTICLE } from "../web/js/article.js";
-import { sha256 } from "../web/vendor/noble.js";
-import { DS, b64, b32, b32decode, concat } from "../web/js/encoding.js";
+import { Article, Identity, manifestData, newArticle, MARKDOWN_TYPE, PURPOSE_ARTICLE } from "../js/article.js";
+import { sha256 } from "../js/vendor/noble.js";
+import { DS, b64, b32, b32decode, concat } from "../js/encoding.js";
 
 let failed = 0;
 const check = (name, ok) => { console.error((ok ? "ok   " : "FAIL ") + name); if (!ok) failed++; };

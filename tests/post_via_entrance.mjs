@@ -1,9 +1,9 @@
 // Post through a running entrance from node (no browser), to tell browser and protocol apart.
 //   node --experimental-default-type=module tests/post_via_entrance.mjs http://127.0.0.1:8043/ <onion> <group>
-import { Connection } from "../web/js/nntp.js";
-import { Identity, MARKDOWN_TYPE, PURPOSE_ARTICLE, newArticle } from "../web/js/article.js";
-import { sha256 } from "../web/vendor/noble.js";
-import { DS, b64, concat } from "../web/js/encoding.js";
+import { Connection } from "../js/nntp.js";
+import { Identity, MARKDOWN_TYPE, PURPOSE_ARTICLE, newArticle } from "../js/article.js";
+import { sha256 } from "../js/vendor/noble.js";
+import { DS, b64, concat } from "../js/encoding.js";
 
 const [base, onion, group] = process.argv.slice(2);
 const c = await Connection.open(base, onion);

@@ -1,6 +1,6 @@
 // Build a reply the way the web client does, for tests/check_with_reference.py.
 import { readFileSync } from "node:fs";
-import { Article, Identity, MARKDOWN_TYPE, PURPOSE_ARTICLE, newArticle } from "../web/js/article.js";
+import { Article, Identity, MARKDOWN_TYPE, PURPOSE_ARTICLE, newArticle } from "../js/article.js";
 
 const parent = Article.fromBytes(new Uint8Array(readFileSync(process.argv[2])));
 const id = Identity.generate();

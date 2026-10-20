@@ -1,5 +1,5 @@
 // Encodings and helpers from UN-RFC 0003 section 1.
-import { sha256 } from "../vendor/noble.js";
+import { sha256 } from "./vendor/noble.js";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder("utf-8", { fatal: false });

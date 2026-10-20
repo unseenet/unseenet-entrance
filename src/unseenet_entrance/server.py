@@ -22,6 +22,7 @@ import hashlib
 import hmac
 import json
 import logging
+import mimetypes
 import os
 import re
 import secrets
@@ -34,6 +35,9 @@ from python_socks import ProxyError
 from python_socks.async_.asyncio import Proxy
 
 from . import __version__
+
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("application/wasm", ".wasm")
 
 ONION_RE = re.compile(r"^[a-z2-7]{56}\.onion$")
 ONNTP_PORT = 119
@@ -56,6 +60,11 @@ class Config:
     max_per_visitor: int = 6                 # open tunnels per visitor
     max_total: int = 300                     # open tunnels in all
     trust_forwarded: bool = False            # behind a local reverse proxy / tunnel
+    tls_cert: Path | None = None             # HTTPS on ``port`` when set (docs/certificates.md)
+    tls_key: Path | None = None
+    http_port: int = 0                       # plain HTTP: ACME challenges and a redirect to HTTPS
+    acme_dir: Path | None = None             # where certbot --webroot puts its challenges
+    onion_port: int = 0                      # plain HTTP on 127.0.0.1 for the onion service
     info: dict = field(default_factory=dict)  # /.well-known/unseenet-entrance
 
     @classmethod
@@ -74,6 +83,12 @@ class Config:
         c.max_per_visitor = int(e("ENTRANCE_MAX_PER_VISITOR", c.max_per_visitor))
         c.max_total = int(e("ENTRANCE_MAX_TOTAL", c.max_total))
         c.trust_forwarded = e("ENTRANCE_TRUST_FORWARDED", "") in ("1", "yes", "true")
+        if e("ENTRANCE_TLS_CERT") and e("ENTRANCE_TLS_KEY"):
+            c.tls_cert, c.tls_key = Path(e("ENTRANCE_TLS_CERT")), Path(e("ENTRANCE_TLS_KEY"))
+        c.http_port = int(e("ENTRANCE_HTTP_PORT", c.http_port))
+        c.onion_port = int(e("ENTRANCE_ONION_PORT", c.onion_port))
+        if e("ENTRANCE_ACME_DIR"):
+            c.acme_dir = Path(e("ENTRANCE_ACME_DIR"))
         c.info = {
             "operator": e("ENTRANCE_OPERATOR", ""),
             "contact": e("ENTRANCE_CONTACT", ""),
@@ -208,9 +223,11 @@ async def onntp(request: web.Request) -> web.StreamResponse:
 
 SECURITY_HEADERS = {
     # nothing from elsewhere (UN-RFC 0043 6.4)
+    # 'wasm-unsafe-eval': the client's Python (Pyodide) is WebAssembly; no other eval
     "Content-Security-Policy": ("default-src 'self'; connect-src 'self' ws: wss:; "
-                                "img-src 'self' data:; style-src 'self'; script-src 'self'; "
-                                "worker-src 'self'; object-src 'none'; base-uri 'none'; "
+                                "img-src 'self' data: blob:; style-src 'self'; "
+                                "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
+                                "object-src 'none'; base-uri 'none'; "
                                 "frame-ancestors 'none'; form-action 'none'"),
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
@@ -219,10 +236,19 @@ SECURITY_HEADERS = {
 }
 
 
+# The worker runs Python (Pyodide), which needs eval to load its compiled
+# modules. A worker gets the policy of its own script, so only the worker - which
+# has no access to the page - may eval; the page keeps the strict policy above.
+WORKER_CSP = ("default-src 'self'; connect-src 'self' ws: wss:; "
+              "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'")
+
+
 @web.middleware
 async def headers(request: web.Request, handler):
     resp = await handler(request)
     if not isinstance(resp, web.WebSocketResponse):
+        if request.path == "/worker.js":
+            resp.headers["Content-Security-Policy"] = WORKER_CSP
         for k, v in SECURITY_HEADERS.items():
             resp.headers.setdefault(k, v)
         if request.path.startswith("/.well-known/"):
@@ -253,6 +279,8 @@ async def static(request: web.Request) -> web.StreamResponse:
     rel = request.match_info.get("path") or "index.html"
     path = (root / rel).resolve()
     if root not in path.parents or not path.is_file() or path.name.startswith("."):
+        if rel == "index.html":
+            return web.Response(status=503, text="The web client is not built: run tools/build_web.py\n")
         raise web.HTTPNotFound()
     return web.FileResponse(path)
 
@@ -270,11 +298,82 @@ def make_app(cfg: Config) -> web.Application:
     return app
 
 
+# --- HTTPS -----------------------------------------------------------------
+
+def tls_context(cfg: Config):
+    import ssl
+    ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.load_cert_chain(cfg.tls_cert, cfg.tls_key)
+    return ctx
+
+
+async def reload_tls(ctx, cfg: Config) -> None:
+    """Pick up a renewed certificate without a restart (IP certificates last ~6 days)."""
+    seen = cfg.tls_cert.stat().st_mtime
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            mtime = cfg.tls_cert.stat().st_mtime
+            if mtime != seen:
+                ctx.load_cert_chain(cfg.tls_cert, cfg.tls_key)   # new handshakes use it
+                seen = mtime
+        except (OSError, ValueError) as exc:
+            log.warning("could not reload the certificate: %s", exc)
+
+
+def make_http_app(cfg: Config) -> web.Application:
+    """Port 80: answers ACME http-01 challenges, sends everything else to HTTPS."""
+    async def challenge(request: web.Request) -> web.StreamResponse:
+        token = request.match_info["token"]
+        if cfg.acme_dir is None or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
+            raise web.HTTPNotFound()
+        f = cfg.acme_dir / ".well-known" / "acme-challenge" / token
+        if not f.is_file():
+            raise web.HTTPNotFound()
+        return web.Response(body=f.read_bytes(), content_type="text/plain")
+
+    async def redirect(request: web.Request) -> web.Response:
+        host = request.host.rsplit(":", 1)[0] if not request.host.startswith("[") else request.host.split("]")[0] + "]"
+        port = "" if cfg.port == 443 else f":{cfg.port}"
+        raise web.HTTPMovedPermanently(f"https://{host}{port}{request.path_qs}")
+
+    app = web.Application()
+    app.router.add_get("/.well-known/acme-challenge/{token}", challenge)
+    app.router.add_route("*", "/{tail:.*}", redirect)
+    return app
+
+
+async def serve(cfg: Config) -> None:
+    runners = []
+    ctx = tls_context(cfg) if cfg.tls_cert else None
+    runner = web.AppRunner(make_app(cfg), access_log=None)
+    await runner.setup()
+    await web.TCPSite(runner, cfg.host, cfg.port, ssl_context=ctx).start()
+    runners.append(runner)
+    if cfg.onion_port:      # Tor delivers onion visitors here; never on another interface
+        await web.TCPSite(runner, "127.0.0.1", cfg.onion_port).start()
+    if cfg.http_port:
+        plain = web.AppRunner(make_http_app(cfg), access_log=None)
+        await plain.setup()
+        await web.TCPSite(plain, cfg.host, cfg.http_port).start()
+        runners.append(plain)
+    scheme = "https" if ctx else "http"
+    print(f"unseenet-entrance {__version__} on {scheme}://{cfg.host}:{cfg.port}/"
+          + (f" (and http on {cfg.http_port})" if cfg.http_port else "")
+          + f", Tor SOCKS {cfg.socks_host}:{cfg.socks_port}, nodes: {cfg.nodes}", flush=True)
+    try:
+        if ctx:
+            await reload_tls(ctx, cfg)
+        else:
+            await asyncio.Event().wait()
+    finally:
+        for r in runners:
+            await r.cleanup()
+
+
 def main() -> None:
     # Warnings only, and none of them name a visitor (UN-RFC 0043 section 5).
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     logging.getLogger("aiohttp.access").disabled = True
-    cfg = Config.from_env()
-    print(f"unseenet-entrance {__version__} on http://{cfg.host}:{cfg.port}/ "
-          f"(Tor SOCKS {cfg.socks_host}:{cfg.socks_port}, nodes: {cfg.nodes})", flush=True)
-    web.run_app(make_app(cfg), host=cfg.host, port=cfg.port, access_log=None, print=None)
+    asyncio.run(serve(Config.from_env()))

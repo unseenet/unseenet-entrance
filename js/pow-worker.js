@@ -1,6 +1,6 @@
 // Proof-of-work postage (UN-RFC 0006): find a nonce so that
 // SHA-256(DS("UNSEENET-POW-1") || H(canonical) || nonce) has `bits` leading zero bits.
-import { sha256 } from "../vendor/noble.js";
+import { sha256 } from "./vendor/noble.js";
 import { DS, b64, concat } from "./encoding.js";
 
 function leadingZeroBits(d) {
