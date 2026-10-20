@@ -253,6 +253,8 @@ async def headers(request: web.Request, handler):
     if not isinstance(resp, web.WebSocketResponse):
         if request.path == "/worker.js":
             resp.headers["Content-Security-Policy"] = WORKER_CSP
+        if request.path == "/unseenet-web.html":       # a file to keep and open from disk
+            resp.headers["Content-Disposition"] = 'attachment; filename="unseenet-web.html"'
         for k, v in SECURITY_HEADERS.items():
             resp.headers.setdefault(k, v)            # the jump page sets its own policy
         if request.path.startswith("/.well-known/"):
