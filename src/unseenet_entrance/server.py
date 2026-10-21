@@ -8,7 +8,10 @@ What this server does, and nothing more (UN-RFC 0043 sections 4-5):
   address on port 119 and copies bytes both ways, unchanged;
 - gives every WebSocket its own Tor circuit (SOCKS isolation with random
   credentials);
-- answers ``/.well-known/unseenet-entrance`` and ``/.well-known/unseenet-entrances.json``.
+- answers ``/.well-known/unseenet-entrance``, ``/.well-known/unseenet-entrances.json``
+  and ``/.well-known/unseenet-releases.json``;
+- keeps the web client it serves up to date with signed versions (release.py),
+  unless its operator turns that off.
 
 It writes nothing about visitors anywhere: no access log, no error that names
 an address. Limits are counted in memory, keyed by an HMAC of the address
@@ -36,7 +39,7 @@ from python_socks import ProxyError
 from python_socks.async_.asyncio import Proxy
 
 from . import __version__
-from .listfetch import PROJECT_GROUP, ListCache, keep_fresh
+from .listfetch import PROJECT_GROUP, RELEASES_GROUP, ListCache, keep_fresh
 
 mimetypes.add_type("text/javascript", ".mjs")
 mimetypes.add_type("application/wasm", ".wasm")
@@ -69,6 +72,10 @@ class Config:
     acme_dir: Path | None = None             # where certbot --webroot puts its challenges
     onion_port: int = 0                      # plain HTTP on 127.0.0.1 for the onion service
     list_group: str = PROJECT_GROUP          # the signed list of entrances (UN-RFC 0043 8.1)
+    release_group: str = RELEASES_GROUP      # signed versions of the web client (7.2)
+    release_owner: str = ""                  # test only: the key that owns both (default: the project's)
+    releases_dir: Path | None = None         # versions live here, web_dir is its "current" (7.3)
+    auto_update: str = "web"                 # "web": the web client updates itself; "off"
     info: dict = field(default_factory=dict)  # /.well-known/unseenet-entrance
 
     @classmethod
@@ -92,6 +99,11 @@ class Config:
         c.http_port = int(e("ENTRANCE_HTTP_PORT", c.http_port))
         c.onion_port = int(e("ENTRANCE_ONION_PORT", c.onion_port))
         c.list_group = e("ENTRANCE_LIST_GROUP", c.list_group)
+        c.release_group = e("ENTRANCE_RELEASE_GROUP", c.release_group)
+        c.release_owner = e("ENTRANCE_RELEASE_OWNER", c.release_owner)
+        if e("ENTRANCE_RELEASES_DIR"):
+            c.releases_dir = Path(e("ENTRANCE_RELEASES_DIR"))
+        c.auto_update = e("ENTRANCE_AUTO_UPDATE", c.auto_update)
         if e("ENTRANCE_ACME_DIR"):
             c.acme_dir = Path(e("ENTRANCE_ACME_DIR"))
         c.info = {
@@ -259,14 +271,28 @@ async def headers(request: web.Request, handler):
             resp.headers["Content-Disposition"] = 'attachment; filename="unseenet-web.html"'
         for k, v in SECURITY_HEADERS.items():
             resp.headers.setdefault(k, v)            # the jump page sets its own policy
-        if request.path.startswith("/.well-known/"):
-            resp.headers["Access-Control-Allow-Origin"] = "*"     # UN-RFC 0043 8.7
+        # anyone may read: the lists (8.7), and the files, for apps updating from here (7.2)
+        resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers.setdefault("Cache-Control", "no-cache")
     return resp
 
 
+def web_version(cfg: Config) -> str:
+    """The version of the web client served (version.json of the build)."""
+    try:
+        return str(json.loads((cfg.web_dir / "version.json").read_text()).get("version", ""))
+    except (OSError, ValueError):
+        return ""
+
+
 async def entrance_info(request: web.Request) -> web.Response:
-    return web.json_response(request.app["cfg"].info)
+    cfg: Config = request.app["cfg"]
+    return web.json_response({**cfg.info, "web": web_version(cfg)})
+
+
+async def releases_list(request: web.Request) -> web.Response:
+    """Signed versions of the web client, as the network has them (UN-RFC 0043 7.2)."""
+    return web.json_response(request.app["releases"].bundle())
 
 
 async def entrances_list(request: web.Request) -> web.Response:
@@ -320,9 +346,11 @@ def make_app(cfg: Config) -> web.Application:
     app["limits"] = Limits(cfg.max_per_visitor, cfg.max_total)
     app["allowed"] = cfg.allowed_nodes()
     app["list"] = ListCache(cfg.list_group)
+    app["releases"] = ListCache(cfg.release_group)
     app.router.add_get("/onntp", onntp)
     app.router.add_get("/.well-known/unseenet-entrance", entrance_info)
     app.router.add_get("/.well-known/unseenet-entrances.json", entrances_list)
+    app.router.add_get("/.well-known/unseenet-releases.json", releases_list)
     app.router.add_get("/nodes.json", nodes_json)
     app.router.add_get("/unseenet-entrances.html", jump_page)
     app.router.add_get("/{path:.*}", static)
@@ -383,8 +411,11 @@ async def serve(cfg: Config) -> None:
     await runner.setup()
     nodes = sorted(app["allowed"]) if app["allowed"] else []
     if nodes:
+        from .release import Updater
+        updater = Updater(cfg, app["releases"], app["list"])
         asyncio.get_running_loop().create_task(
-            keep_fresh(app["list"], nodes, cfg.socks_host, cfg.socks_port))
+            keep_fresh([app["list"], app["releases"]], nodes, cfg.socks_host, cfg.socks_port,
+                       on_fresh=updater.check if updater.enabled else None))
     await web.TCPSite(runner, cfg.host, cfg.port, ssl_context=ctx).start()
     runners.append(runner)
     if cfg.onion_port:      # Tor delivers onion visitors here; never on another interface
