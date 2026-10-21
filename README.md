@@ -28,8 +28,8 @@ This repository is two things:
 ## Using it
 
 Open an entrance's address, for example the project's own,
-**https://129.151.209.26/** (its certificate is for the IP address; there is
-no domain on purpose). Create a vault - a name and a passphrase - or open one
+**https://entrance.unseenet.net/** - or **https://129.151.209.26/**, the
+same entrance by its IP address, for when the name is blocked. Create a vault - a name and a passphrase - or open one
 you have. A bar at the top always says that you are on the open web.
 
 - **Keep your vault.** Your keys live in the vault, encrypted with your
@@ -92,6 +92,7 @@ given before `sh`:
 |---|---|
 | `TLS=auto` (default) | A certificate for the public IP address; plain HTTP on port 8043 if that fails, with the reason |
 | `TLS=domain:NAME` | A normal certificate for NAME (point it here first) |
+| `TLS=both:NAME` | One certificate for NAME and the public IP address: a name to share, and the address for when the name is blocked |
 | `TLS=none` | Plain HTTP on port 8043: a LAN test, or your own proxy in front |
 | `MIRROR=portable` or `all` | Also mirror Unseenet's releases - see [A mirror](#a-mirror-of-the-releases) |
 | `BUILD=local` | Build the web client here instead of installing the signed one (it says it is not signed) |

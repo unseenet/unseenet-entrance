@@ -10,6 +10,9 @@
 #                       address (6-day certificates, renewed automatically); if
 #                       that fails, plain HTTP on port 8043 and an explanation
 #   TLS=domain:NAME     a normal Let's Encrypt certificate for NAME (point NAME here first)
+#   TLS=both:NAME       one certificate for NAME and the public IP address, so the
+#                       entrance answers on both: the name to share, the address for
+#                       when the name is blocked (6-day certificates, as for the IP)
 #   TLS=none            plain HTTP on port 8043 (a LAN test, or your own proxy in front)
 # Ports 80 and 443 must be open to the internet for the first two. On a machine
 # whose own firewall rejects them (Oracle Cloud's images do), they are opened.
@@ -235,7 +238,11 @@ install -o root -g unseenet-entrance -m 0640 /etc/letsencrypt/live/unseenet-entr
 install -o root -g unseenet-entrance -m 0640 /etc/letsencrypt/live/unseenet-entrance/privkey.pem $TLSDIR/privkey.pem
 EOF
   chmod 755 /usr/local/sbin/unseenet-entrance-cert-deploy
-  if [ "$1" = ip ]; then ident="--ip-address $2 --required-profile shortlived"; else ident="-d $2"; fi
+  case "$1" in
+    ip)   ident="--ip-address $2 --required-profile shortlived" ;;
+    both) ident="-d $3 --ip-address $2 --required-profile shortlived --expand" ;;
+    *)    ident="-d $2" ;;
+  esac
   # no e-mail address: nothing ties this entrance to a person at Let's Encrypt
   # shellcheck disable=SC2086
   if "$CERTBOT" certonly --non-interactive --agree-tos --register-unsafely-without-email \
@@ -243,7 +250,7 @@ EOF
       --deploy-hook /usr/local/sbin/unseenet-entrance-cert-deploy; then
     # 6-day certificates: renew two days before they run out (about twice a week)
     conf=/etc/letsencrypt/renewal/unseenet-entrance.conf
-    if [ "$1" = ip ] && ! grep -q '^renew_before_expiry' "$conf"; then
+    if [ "$1" != domain ] && ! grep -q '^renew_before_expiry' "$conf"; then
       sed -i '1i renew_before_expiry = 2 days' "$conf"
     fi
     cat > /etc/systemd/system/unseenet-entrance-renew.service <<EOF
@@ -298,6 +305,12 @@ case "$TLS" in
     NAME="${TLS#domain:}"
     if get_certificate domain "$NAME"; then URL="https://$NAME/"; else
       echo "!! no certificate for $NAME: does it point here, and are ports 80 and 443 open?"; plain_http; fi ;;
+  both:*)
+    NAME="${TLS#both:}"
+    IP=$(public_ip)
+    if [ -n "$IP" ] && get_certificate both "$IP" "$NAME"; then URL="https://$NAME/ and https://$IP/"; else
+      echo "!! no certificate for $NAME and ${IP:-(unknown)}: does $NAME point here, and are ports 80 and 443 open?"
+      plain_http; fi ;;
   auto|ip)
     IP=$(public_ip)
     if [ -n "$IP" ] && get_certificate ip "$IP"; then URL="https://$IP/"; else
