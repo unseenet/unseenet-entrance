@@ -6,7 +6,9 @@
 //  - opens and saves the vault as a file (section 6.2), or - when the person
 //    turns it on - keeps it on this device, still encrypted with their passphrase;
 //  - installs the page as an app (a manifest and a service worker that keeps the
-//    client on the device, so it starts at once from the home screen).
+//    client on the device, so it starts at once from the home screen), keeping
+//    only files a signed post in unseenet.releases names, and offers newer
+//    versions from any entrance (section 7.3).
 (() => {
   "use strict";
   // FILE: the client in a file (UN-RFC 0043 8.7) - set by the build, with the signed list
@@ -104,13 +106,17 @@
     // an app on the home screen: the client kept on the device by a service worker
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
     chooseTunnel().catch(() => null).then((ws) => startWorker(new Worker("/worker.js", { type: "module" }), ws ? { entrance: ws } : {}));
+    setTimeout(() => checkVersions().catch(() => {}), 3000);
+    setInterval(() => checkVersions().catch(() => {}), 6 * 3600 * 1000);
   }
 
   // --- when this entrance is gone: another one from the signed list (UN-RFC 0043 8.3) --
   // The page and the client may come from the device (the service worker); only the
   // tunnel needs an entrance, and any listed one will do.
   const LIST_KEY = "unseenet-entrances";            // the last signed list seen; checked again on use
-  const ANCHOR = window.UNSEENET_ANCHOR || {};
+  const ANCHOR = (() => {           // a lab's own key instead of the project's (build_web.py --list-owner)
+    try { return JSON.parse(document.getElementById("unseenet-anchor").textContent) || {}; } catch { return {}; }
+  })();
   const verifyList = (b) => (ANCHOR.owner ? __m.entrances.verifyBundle(b, ANCHOR.owner, ANCHOR.group)
                                           : __m.entrances.verifyBundle(b));
   async function answers(base, ms = 6000) {
@@ -142,6 +148,171 @@
     const ws = new URL("onntp", entrance.url);
     ws.protocol = ws.protocol === "https:" ? "wss:" : "ws:";
     return ws.href;
+  }
+
+  // --- the client kept on this device, and newer versions (UN-RFC 0043 7.3) --
+  // The page keeps a version only when every file matches the SHA-256 that a post
+  // in unseenet.releases gives, signed by a key the project key lists - wherever
+  // the files came from. It offers newer versions and never goes back. A build
+  // that is not signed (an entrance built for testing) is kept as it is, and says so.
+  const META = "unseenet-meta", FRESH = "unseenet-fetch";   // ?unseenet-fetch: past the service worker
+  let keptVersion = null, offer = null, swWarning = false, ownWeb = "";
+  const verifyReleases = (b) => (ANCHOR.owner && ANCHOR.releases
+    ? __m.releases.verifyReleases(b, ANCHOR.owner, ANCHOR.releases) : __m.releases.verifyReleases(b));
+  const newer = (a, b) => __m.releases.compareVersions(a, b) > 0;
+  async function hex(buf) {
+    const d = new Uint8Array(await crypto.subtle.digest("SHA-256", buf));
+    return Array.from(d, (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+  async function getJSON(url, ms = 8000) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try {
+      const r = await realFetchEarly(url, { signal: ctl.signal, cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+  async function readActive() {
+    const r = await (await caches.open(META)).match("/__active");
+    return r ? r.json() : null;
+  }
+  async function setActive(a) {
+    await (await caches.open(META)).put("/__active", new Response(JSON.stringify(a), { headers: { "Content-Type": "application/json" } }));
+    const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
+    for (const w of [navigator.serviceWorker.controller, reg && reg.active]) if (w) w.postMessage({ type: "active-changed" });
+  }
+  // the entrances to ask: this one, and two others from the signed list
+  function otherEntrances(n = 2) {
+    const list = knownList();
+    const others = list ? list.entrances.filter((e) => e.url && new URL(e.url).origin !== location.origin) : [];
+    return others.sort(() => Math.random() - 0.5).slice(0, n).map((e) => e.url);
+  }
+  // every valid version any of them has, newest first (7.3.1)
+  async function signedVersions(bases) {
+    const seen = new Map();
+    await Promise.all(bases.map(async (base) => {
+      try {
+        for (const r of verifyReleases(await getJSON(new URL(".well-known/unseenet-releases.json", base))))
+          if (!seen.has(r.version)) seen.set(r.version, r);
+      } catch { /* that one has none, or cannot be trusted */ }
+    }));
+    return [...seen.values()].sort((a, b) => __m.releases.compareVersions(b.version, a.version));
+  }
+  async function serving(version, bases) {           // the entrances that serve this version
+    const ok = await Promise.all(bases.map(async (b) => {
+      try { return (await getJSON(new URL(".well-known/unseenet-entrance", b))).web === version ? b : null; }
+      catch { return null; }
+    }));
+    return ok.filter(Boolean);
+  }
+  function parseSums(text) {
+    const files = {};
+    for (const line of text.split("\n")) {
+      const m = /^([0-9a-f]{64})  (\S+)$/.exec(line);
+      if (m) files[m[2]] = m[1];
+    }
+    return files;
+  }
+  // download, check and keep one version; then the service worker serves it
+  async function keepVersion(version, files, bases, signed, progress = () => {}) {
+    if (!bases.length) throw new Error("no entrance that answers has this version");
+    const name = "unseenet-web-" + version;
+    const c = await caches.open(name);
+    const prev = await readActive().catch(() => null);
+    const old = prev && prev.cache !== name ? await caches.open(prev.cache) : null;
+    const paths = Object.keys(files).filter((p) => !p.endsWith(".template.html"));
+    let done = 0;
+    for (const path of paths) {
+      let buf = null;
+      for (const src of [old, c]) {                  // unchanged files: from what is kept
+        const hit = src && await src.match("/" + path);
+        if (hit) { const b = await hit.arrayBuffer(); if (await hex(b) === files[path]) { buf = b; break; } }
+      }
+      for (const base of bases) {
+        if (buf) break;
+        try {
+          const u = new URL(path, base);
+          if (u.origin === location.origin) u.searchParams.set(FRESH, "1");
+          const r = await realFetchEarly(u, { cache: "no-store", mode: "cors" });
+          const b = r.ok ? await r.arrayBuffer() : null;
+          if (b && await hex(b) === files[path]) buf = b;
+        } catch { /* the next entrance */ }
+      }
+      if (!buf) throw new Error(`${path} could not be fetched, or did not match the signed checksum`);
+      await c.put("/" + path, new Response(buf));
+      progress(++done, paths.length);
+    }
+    await setActive({ version, cache: name, signed });
+    for (const k of await caches.keys()) if (k.startsWith("unseenet-web-") && k !== name) await caches.delete(k);
+    keptVersion = { version, signed };
+  }
+  async function checkVersions() {
+    if (FILE || !("caches" in window) || !window.isSecureContext || !navigator.serviceWorker) return;
+    const own = location.origin + "/";
+    const active = await readActive().catch(() => null);
+    if (active) keptVersion = { version: active.version, signed: active.signed };
+    try { ownWeb = (await getJSON(own + ".well-known/unseenet-entrance")).web || ""; } catch { ownWeb = ""; }
+    const others = otherEntrances();
+    const versions = await signedVersions([own, ...others]);
+    if (!active && ownWeb) {                         // the first visit: keep what runs now
+      const r = versions.find((x) => x.version === ownWeb);
+      if (r) await keepVersion(ownWeb, r.files, [own], true);
+      else {
+        const sums = await realFetchEarly(`/release.sums?${FRESH}=1`, { cache: "no-store" });
+        if (sums.ok) await keepVersion(ownWeb, parseSums(await sums.text()), [own], false);
+      }
+    }
+    offer = null;
+    if (keptVersion) {
+      const best = versions[0];
+      if (best && newer(best.version, keptVersion.version)) offer = best;
+      else if (!keptVersion.signed && ownWeb && newer(ownWeb, keptVersion.version) && !versions.some((v) => v.version === ownWeb))
+        offer = { version: ownWeb, unsigned: true };      // a newer test build here
+    }
+    // the tripwire (7.3): the service worker the entrance serves must be a signed one
+    if (keptVersion && keptVersion.signed && versions.length) {
+      try {
+        const sw = await realFetchEarly(`/sw.js?${FRESH}=1`, { cache: "no-store" });
+        if (sw.ok) swWarning = !new Set(versions.map((v) => v.files["sw.js"])).has(await hex(await sw.arrayBuffer()));
+      } catch { /* the entrance is gone: nothing to compare */ }
+    }
+    updateBar();
+  }
+  function updateDialog() {
+    const d = el("dialog", { class: "uw-dialog" });
+    const status = el("p", { class: "uw-status" }, "");
+    const unlocked = typeof S !== "undefined" && S.state && S.state.unlocked;
+    const go = el("button", { class: "uw-btn uw-dirty", on: { onclick: async () => {
+      go.disabled = true;
+      try {
+        const own = location.origin + "/";
+        const bases = await serving(offer.version, [own, ...otherEntrances(6)]);
+        const files = offer.unsigned
+          ? parseSums(await (await realFetchEarly(`/release.sums?${FRESH}=1`, { cache: "no-store" })).text())
+          : offer.files;
+        status.textContent = "Fetching and checking ...";
+        await keepVersion(offer.version, files, bases, !offer.unsigned, (n, all) => { status.textContent = `Checked ${n} of ${all} files ...`; });
+        status.textContent = "Done. Starting the new version ...";
+        if (kept && keepTimer) { clearTimeout(keepTimer); await storeVault().catch(() => {}); }
+        vaultDirty = false;
+        location.reload();
+      } catch (err) { status.textContent = "Not updated: " + err.message; go.disabled = false; }
+    } } }, "Update now");
+    const when = offer.date ? " of " + offer.date.toISOString().slice(0, 10) : "";
+    d.append(el("h2", {}, "A new version of the client"),
+      el("p", {}, offer.unsigned
+        ? `This entrance has a newer test build, ${offer.version}. It is not signed: use it only if you trust this entrance.`
+        : `Version ${offer.version}${when}, signed by ${offer.byOwner ? "the Unseenet project's key" : "a key the Unseenet project lists"}. ` +
+          "Every file is checked against the signature before it is used, whichever entrance it comes from."),
+      unlocked && !kept ? el("p", { class: "uw-warn" }, "Your vault is only in this tab: save it as a file first, or it is gone when the page starts again.") : "",
+      status,
+      el("div", { class: "uw-row" }, go,
+        unlocked && !kept ? el("button", { class: "uw-btn", on: { onclick: saveVault } }, "Save vault file") : "",
+        el("button", { class: "uw-btn", on: { onclick: () => d.close() } }, "Later")));
+    document.body.append(d);
+    d.showModal();
+    d.addEventListener("close", () => d.remove());
   }
 
   // --- the API, answered by the worker ------------------------------------
@@ -311,6 +482,10 @@
     const keep = bar.querySelector(".uw-keep");
     keep.hidden = FILE ? true : !unlocked && !kept;
     keep.textContent = kept ? "On this device ✓" : "Keep on this device";
+    const upd = bar.querySelector(".uw-update");
+    upd.hidden = !offer;
+    const warn = bar.querySelector(".uw-swwarn");
+    warn.hidden = !swWarning;
     const save = bar.querySelector(".uw-save");
     save.hidden = kept;
     save.classList.toggle("uw-dirty", vaultDirty);
@@ -339,6 +514,8 @@
         ...rows.map(([a, b, c]) => el("tr", {}, el("td", {}, a), el("td", {}, b), el("td", { class: c.startsWith("Yes") || c.startsWith("Every") || c.startsWith("This") ? "uw-warn" : "" }, c)))),
       el("p", {}, kept ? "Your vault is kept on this device, encrypted with your passphrase. Keep a copy as a file too." :
         "Your vault lives only in this tab. Save it as a file to use it again, or keep it on this device. If you need to hide that you use Unseenet, or who you are, use the real client from unseenet.org."),
+      el("p", {}, keptVersion ? `Version ${keptVersion.version}, ${keptVersion.signed ? "signed - every file checked" : "a test build, not signed"}, kept on this device.`
+        : (ownWeb ? `Version ${ownWeb}, from this entrance.` : "")),
       el("p", {}, "If this entrance is ever blocked: ",
         el("a", { href: (FILE && entrance ? entrance.url : "/") + "unseenet-entrances.html", download: "unseenet-entrances.html" }, "save the list of entrances"),
         " - a small file that finds another one, from your own disk. Send it to friends too."),
@@ -356,7 +533,12 @@
       el("button", { class: "uw-link", on: { onclick: aboutDialog } }, window.matchMedia("(max-width: 760px)").matches ? "Why?" : "What does that mean?"),
       FILE ? el("button", { class: "uw-link", on: { onclick: () => { if (!vaultDirty || confirm("Your vault has changes you have not saved. Leave anyway?")) location.reload(); } } }, "Another entrance")
         : el("a", { class: "uw-link", href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "Other entrances"),
+      el("button", { class: "uw-link uw-warn uw-swwarn", hidden: "", on: { onclick: () => alert(
+        "This entrance now serves a service worker - the part of the app that the browser fetches by itself - " +
+        "that is not in any signed version. It could change what runs here. Unless the entrance's operator says why, " +
+        "use another entrance, or the client in a file.") } }, "Warning: unsigned worker"),
       el("span", { class: "uw-grow" }),
+      el("button", { class: "uw-btn uw-dirty uw-update", hidden: "", on: { onclick: updateDialog } }, "New version"),
       el("button", { class: "uw-btn uw-open", on: { onclick: () => file.click() } }, "Open vault file"),
       el("button", { class: "uw-btn uw-keep", on: { onclick: keepDialog } }, "Keep on this device"),
       el("button", { class: "uw-btn uw-save", on: { onclick: saveVault } }, "Save vault file"),

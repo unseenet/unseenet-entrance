@@ -21,6 +21,8 @@ html.uw #root { flex: 1; min-height: 0; height: auto; }
 .uw-dialog table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .uw-dialog th, .uw-dialog td { text-align: left; padding: 6px; border-bottom: 1px solid #c9e2d9; vertical-align: top; }
 .uw-dialog .uw-warn { color: #8a5a00; font-weight: 700; }
+.uw-bar .uw-warn { color: #ffcf66; font-weight: 700; }
+.uw-dialog .uw-status { min-height: 1.4em; }
 @media (max-width: 760px) {        /* phones: one slim line */
   .uw-bar { font-size: 12px; padding: 4px 10px; gap: 4px 10px; flex-wrap: nowrap; }
   .uw-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

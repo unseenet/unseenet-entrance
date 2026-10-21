@@ -20,10 +20,16 @@
 # A Tor that is already running is reloaded, not restarted, so its other users
 # keep their circuits.
 #
+# The web client (unseenet-gui in the browser): the newest signed version,
+# found through the network (UN-RFC 0043 section 7.2), the same files as every
+# other entrance. It then updates itself when a newer one is posted; set
+# ENTRANCE_AUTO_UPDATE=off in the settings to stop that. The entrance's own code
+# is never updated by itself: run this script again for that.
+#   BUILD=local         build the web client here instead (not signed)
+#
 # Also sets up Tor (SOCKS for the tunnels and an onion address for the entrance),
-# builds the web client (unseenet-gui in the browser), and runs the entrance as
-# its own user with a journal kept in memory only: nothing about visitors is
-# written to disk.
+# and runs the entrance as its own user with a journal kept in memory only:
+# nothing about visitors is written to disk.
 set -eu
 
 SRC="${1:-https://github.com/unseenet/unseenet-entrance.git}"
@@ -33,6 +39,7 @@ ENVFILE=/etc/unseenet-entrance.env
 TLSDIR=/etc/unseenet-entrance/tls
 ACME=/var/lib/unseenet-entrance/acme
 CERTBOT=/opt/certbot/bin/certbot
+WEBREL=/var/lib/unseenet-entrance/web     # versions of the web client; "current" is served
 
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 
@@ -41,7 +48,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q tor python3-venv git ca-certificates >/dev/null
 
-echo "== user, code and the web client"
+echo "== user and code"
 id unseenet-entrance >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin unseenet-entrance
 rm -rf "$APP.new"
 if [ -d "$SRC" ]; then cp -a "$SRC" "$APP.new"; else git clone -q --depth 1 "$SRC" "$APP.new"; fi
@@ -49,12 +56,6 @@ rm -rf "$APP.new/.venv" "$APP.new/.git"
 python3 -m venv "$APP.new/.venv"
 "$APP.new/.venv/bin/pip" install -q --upgrade pip
 "$APP.new/.venv/bin/pip" install -q "$APP.new"
-# LIST_OWNER / LIST_GROUP: test only - trust a lab list of entrances instead of the project's
-if [ -n "${LIST_OWNER:-}" ] && [ -n "${LIST_GROUP:-}" ]; then
-  python3 "$APP.new/tools/build_web.py" --list-owner "$LIST_OWNER" --list-group "$LIST_GROUP"
-else
-  python3 "$APP.new/tools/build_web.py"
-fi
 rm -rf "$APP.old"; [ -d "$APP" ] && mv "$APP" "$APP.old"; mv "$APP.new" "$APP"
 chown -R root:root "$APP"
 
@@ -108,9 +109,38 @@ ENTRANCE_CONTACT=
 ENTRANCE_TRUST_FORWARDED=0
 EOF
 fi
-setting ENTRANCE_WEB_DIR "$APP/web"
+setting ENTRANCE_WEB_DIR "$WEBREL/current"
+setting ENTRANCE_RELEASES_DIR "$WEBREL"
+grep -q '^ENTRANCE_AUTO_UPDATE=' "$ENVFILE" || setting ENTRANCE_AUTO_UPDATE web
+# LIST_OWNER / LIST_GROUP / RELEASES_GROUP: test only - a lab's key and groups instead of the project's
 if [ -n "${LIST_GROUP:-}" ]; then setting ENTRANCE_LIST_GROUP "$LIST_GROUP"; fi
+if [ -n "${LIST_OWNER:-}" ]; then setting ENTRANCE_RELEASE_OWNER "$LIST_OWNER"; fi
+if [ -n "${RELEASES_GROUP:-}" ]; then setting ENTRANCE_RELEASE_GROUP "$RELEASES_GROUP"; fi
 setting ENTRANCE_ONION "$ONION"
+
+echo "== the web client"
+mkdir -p "$WEBREL"
+chown unseenet-entrance:unseenet-entrance "$WEBREL"
+as_entrance() {      # a command as the entrance's user, with its settings
+  ( set -a; . "$ENVFILE"; set +a; runuser -u unseenet-entrance -- "$@" )
+}
+build_here() {
+  echo "   building it here (not signed) ..."
+  if [ -n "${LIST_OWNER:-}" ] && [ -n "${LIST_GROUP:-}" ]; then
+    python3 "$APP/tools/build_web.py" --list-owner "$LIST_OWNER" --list-group "$LIST_GROUP" \
+      ${RELEASES_GROUP:+--releases-group "$RELEASES_GROUP"}
+  else
+    python3 "$APP/tools/build_web.py"
+  fi
+  as_entrance "$APP/.venv/bin/python" -m unseenet_entrance.release --adopt "$APP/web"
+}
+if [ "${BUILD:-}" = local ]; then
+  build_here
+else
+  echo "   the newest signed version, through the network (Tor can take a few minutes) ..."
+  as_entrance "$APP/.venv/bin/python" -m unseenet_entrance.release --install --wait 300 || {
+    echo "   no signed version found yet"; build_here; }
+fi
 
 echo "== service"
 cat > /etc/systemd/system/unseenet-entrance.service <<EOF
@@ -133,6 +163,8 @@ StandardOutput=journal
 StandardError=journal
 PrivateTmp=yes
 ProtectSystem=strict
+# where the web client updates itself (UN-RFC 0043 7.3); nothing else is written
+ReadWritePaths=$WEBREL
 ProtectHome=yes
 NoNewPrivileges=yes
 LimitCORE=0

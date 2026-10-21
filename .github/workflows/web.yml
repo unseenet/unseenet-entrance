@@ -1,0 +1,97 @@
+name: web
+# One build of the web client for every entrance (UN-RFC 0043 sections 7.2-7.3):
+# built from this repository, unseenet and unseenet-gui (main), released here as
+# web-<version> (a zip and the list of every file's SHA-256), and that list
+# posted in unseenet.releases over Tor. Entrances and installed apps update to
+# it, checking every file against the post.
+#
+# Runs on changes here, every day (to pick up changes in unseenet and
+# unseenet-gui) and by hand - and makes a new version only when a file changed.
+# The key is the GitHub poster (secret UNSEENET_ANNOUNCE_SEED, put here by
+# unseenet's tools/project/share_poster.py); the project key lists it as a
+# poster in unseenet.releases.
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "js/**", "jump/**", "tools/build_web.py", "tools/post_release.py", ".github/workflows/web.yml"]
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "make a new version even if no file changed"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web
+  cancel-in-progress: false
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Sources
+        run: |
+          git clone -q --depth 1 https://github.com/unseenet/unseenet.git core
+          git clone -q --depth 1 https://github.com/unseenet/unseenet-gui.git gui
+          pip install -q ./core .
+      - name: Build
+        run: |
+          python tools/build_web.py --core core --gui gui --release-out out
+          echo "TEXT=$(ls out/unseenet-web-*.txt)" >> "$GITHUB_ENV"
+          echo "VERSION=$(python -c 'import json;print(json.load(open("web/version.json"))["version"])')" >> "$GITHUB_ENV"
+      - name: Did anything change?
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          last=$(gh release list --limit 50 --json tagName -q '.[].tagName' | grep '^web-' | head -1 || true)
+          same=no
+          if [ -n "$last" ] && gh release download "$last" -p 'unseenet-web-*.txt' -D last 2>/dev/null; then
+            # every file but version.json and the zip (which holds version.json)
+            strip() { grep -E '^[0-9a-f]{64}  ' "$1" | grep -v -E '  (version\.json|unseenet-web-.*\.zip)$'; }
+            if [ "$(strip last/*.txt)" = "$(strip "$TEXT")" ]; then same=yes; fi
+          fi
+          if [ "$same" = yes ]; then echo "No file changed since $last."; fi
+          if [ "$FORCE" = true ]; then same=no; fi
+          echo "SAME=$same" >> "$GITHUB_ENV"
+      - name: Release
+        if: env.SAME != 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "The web client, version $VERSION: the files every entrance serves (UN-RFC 0043 section 7.2)."
+            echo
+            echo "Entrances and installed apps update to it by themselves, checking every file against the SHA-256"
+            echo "posted in unseenet.releases. To check by hand, unpack the zip and run \`sha256sum -c\` on the list below."
+            echo
+            echo '```'
+            cat "$TEXT"
+            echo '```'
+          } > notes.md
+          gh release create "web-$VERSION" out/unseenet-web-*.zip "$TEXT" --title "Web client $VERSION" \
+            --notes-file notes.md --prerelease --latest=false --target "$GITHUB_SHA"
+          # keep the newest ten
+          gh release list --limit 100 --json tagName -q '.[].tagName' | grep '^web-' | tail -n +11 |
+            while read -r old; do gh release delete "$old" --yes --cleanup-tag; done
+      - name: Install Tor
+        if: env.SAME != 'yes'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tor
+          sudo systemctl stop tor || true      # the poster runs its own
+      - name: Post in unseenet.releases
+        if: env.SAME != 'yes'
+        env:
+          UNSEENET_ANNOUNCE_SEED: ${{ secrets.UNSEENET_ANNOUNCE_SEED }}
+        run: python tools/post_release.py "$TEXT"

@@ -9,7 +9,7 @@ description = "A web entrance to Unseenet: lets a browser in over Tor (UN-RFC 00
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["aiohttp>=3.9", "python-socks[asyncio]>=2.4"]
+dependencies = ["aiohttp>=3.9", "python-socks[asyncio]>=2.4", "unseenet>=0.3"]
 
 [project.scripts]
 unseenet-entrance = "unseenet_entrance.server:main"

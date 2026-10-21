@@ -73,13 +73,34 @@ curl -fsSLO https://raw.githubusercontent.com/unseenet/unseenet-entrance/main/de
 sudo sh install.sh
 ```
 
-That installs Tor, gives the entrance an onion address, builds the web
-client, and gets a Let's Encrypt certificate for the machine's **public IP
+That installs Tor, gives the entrance an onion address, installs the newest
+signed version of the web client, and gets a Let's Encrypt certificate for the machine's **public IP
 address** - no domain needed; the 6-day certificates renew by themselves.
 `TLS=domain:entrance.example.org` uses a name instead, `TLS=none` plain HTTP
 on port 8043 (a LAN test). See [docs/certificates.md](docs/certificates.md).
 Never put it behind a CDN that ends TLS on someone else's machine
 (UN-RFC 0043 section 5).
+
+## New versions
+
+Every entrance serves the same build of the web client, made by
+[this repository's CI](.github/workflows/web.yml) and posted in the project
+channel `unseenet.releases` with the SHA-256 of every file (UN-RFC 0043
+sections 7.2-7.3):
+
+- **The app** on a phone or computer shows *New version* when there is one,
+  and updates only when you say so. It takes the files from any entrance that
+  has that version and uses them only when every one matches the signed post.
+  It never goes back to an older version, and warns if the entrance serves a
+  service worker that is in no signed version.
+- **The entrance** updates the web client it serves by itself, the same way:
+  from the release here, or file by file from other entrances. Its own code
+  is never updated by itself: run `install.sh` again for that.
+  `ENTRANCE_AUTO_UPDATE=off` in `/etc/unseenet-entrance.env` stops it.
+
+Neither needs GitHub: the posts are read through the network, and the files
+can come from any entrance. A build of your own (`BUILD=local sh install.sh`)
+runs, but the app says it is not signed.
 
 ## Develop
 
@@ -89,6 +110,9 @@ python3 tools/build_web.py --core ../unseenet --gui ../unseenet-gui   # or witho
 ENTRANCE_SOCKS=127.0.0.1:9050 .venv/bin/unseenet-entrance               # needs a running Tor
 # open http://127.0.0.1:8043/
 ```
+
+A lab with two entrances and signed test versions, without the network:
+`tests/lab_updates.py` (see its docstring).
 
 `tools/build_web.py` puts unseenet-gui's page, a pinned Pyodide (sha256-checked)
 and a zip of the Python code into `web/`; at run time nothing is loaded from

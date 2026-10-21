@@ -33,28 +33,39 @@ export function parseList(text, strict = true) {
 }
 
 /**
- * Check a bundle against a pinned owner. Returns the newest valid list:
- * {updated, entrances, date, signer} - or throws, saying why.
+ * The posts of a bundle whose signatures check out against a pinned owner:
+ * [{art, date, signer}], or throws, saying why. ``what`` names the group in messages.
  */
-export function verifyBundle(bundle, ownerKey = PROJECT_KEY, group = PROJECT_GROUP) {
-  if (!bundle || bundle.group !== group) throw new Error("not the list this page trusts");
-  if (!bundle.manifest) throw new Error("the entrance has no copy of the list yet");
+export function signedPosts(bundle, ownerKey, group, what = "list") {
+  if (!bundle || bundle.group !== group) throw new Error(`not the ${what} this page trusts`);
+  if (!bundle.manifest) throw new Error(`the entrance has no copy of the ${what} yet`);
   const [, fp] = splitGroupId(group);
   if (fingerprint(keyFromText(ownerKey)) !== fp) throw new Error("pinned key and group do not match");
   const m = manifestData(Article.fromBytes(b64decode(bundle.manifest)), group);
-  if (!m) throw new Error("the list's group settings are not signed by its owner");
-  if (m.owner !== ownerKey) throw new Error("the list's group has another owner");
+  if (!m) throw new Error(`the ${what}'s group settings are not signed by its owner`);
+  if (m.owner !== ownerKey) throw new Error(`the ${what}'s group has another owner`);
   const signers = new Set([ownerKey, ...(m.posters || [])]);
-  const strict = group === PROJECT_GROUP;
-  let best = null;
+  const out = [];
   for (const raw of bundle.posts || []) {
     let art;
     try { art = Article.fromBytes(b64decode(raw)); } catch { continue; }
     if (art.group !== group || !art.verify() || !signers.has(art.get("Author-Key"))) continue;
+    out.push({ art, date: new Date(art.get("Date") || 0), signer: art.get("Author-Key") });
+  }
+  return out;
+}
+
+/**
+ * Check a bundle against a pinned owner. Returns the newest valid list:
+ * {updated, entrances, date, signer} - or throws, saying why.
+ */
+export function verifyBundle(bundle, ownerKey = PROJECT_KEY, group = PROJECT_GROUP) {
+  const strict = group === PROJECT_GROUP;
+  let best = null;
+  for (const { art, date, signer } of signedPosts(bundle, ownerKey, group)) {
     let list;
     try { list = parseList(art.body, strict); } catch { continue; }
-    const date = new Date(art.get("Date") || 0);
-    if (!best || date > best.date) best = { ...list, date, signer: art.get("Author-Key") };
+    if (!best || date > best.date) best = { ...list, date, signer };
   }
   if (!best) throw new Error("no post in the list is signed by its owner or a poster");
   return best;

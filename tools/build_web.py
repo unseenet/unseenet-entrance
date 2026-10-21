@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the web client: unseenet-gui's page with its backend in the browser.
 
-    python3 tools/build_web.py [--core PATH] [--gui PATH]
+    python3 tools/build_web.py [--core PATH] [--gui PATH] [--release-out DIR]
 
 PATH is a checkout of unseenet / unseenet-gui; without one, the main branch is
 cloned from GitHub. Writes into web/:
@@ -11,6 +11,12 @@ cloned from GitHub. Writes into web/:
     pyodide/        Pyodide and the wheels the core needs (pinned, sha256-checked)
     py/bundle.zip   the unseenet core, unseenet_gui, their pure-Python
                     dependencies, webbackend.py and webtransport.py
+    version.json    the version (the build's date and time) and the sources
+    release.sums    the SHA-256 of every file served (UN-RFC 0043 section 7.2)
+
+The same sources give the same files, byte for byte, except version.json.
+--release-out DIR also writes a release: unseenet-web-<version>.zip and
+unseenet-web-<version>.txt, the text posted in unseenet.releases.
 
 Everything the page runs is served by the entrance itself: nothing is loaded
 from anywhere else at run time (UN-RFC 0043 section 6.4). Uses only the
@@ -27,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -101,26 +108,32 @@ def build_pyodide() -> None:
 
 def build_bundle(core: Path, gui: Path) -> None:
     buf = io.BytesIO()
+    entries: dict[str, bytes] = {}
+    for pkg, base in (("unseenet", core / "src" / "unseenet"), ("unseenet_gui", gui / "src" / "unseenet_gui")):
+        for f in sorted(base.rglob("*")):
+            rel = f.relative_to(base)
+            if f.is_dir() or "__pycache__" in rel.parts or rel.parts[0] == "static":
+                continue
+            if f.suffix in (".py", ".json", ".txt"):
+                entries[f"{pkg}/{rel.as_posix()}"] = f.read_bytes()
+    for f in sorted((WEB / "py").glob("*.py")):
+        entries[f.name] = f.read_bytes()
+    for url, sha, tops in WHEELS:
+        with zipfile.ZipFile(io.BytesIO(fetch(url, sha))) as w:
+            for name in w.namelist():
+                if name.split("/")[0] in tops and not name.endswith("/"):
+                    entries[name] = w.read(name)
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for pkg, base in (("unseenet", core / "src" / "unseenet"), ("unseenet_gui", gui / "src" / "unseenet_gui")):
-            for f in sorted(base.rglob("*")):
-                rel = f.relative_to(base)
-                if f.is_dir() or "__pycache__" in rel.parts or rel.parts[0] == "static":
-                    continue
-                if f.suffix in (".py", ".json", ".txt"):
-                    z.write(f, f"{pkg}/{rel.as_posix()}")
-        for f in sorted((WEB / "py").glob("*.py")):
-            z.write(f, f.name)
-        for url, sha, tops in WHEELS:
-            with zipfile.ZipFile(io.BytesIO(fetch(url, sha))) as w:
-                for name in w.namelist():
-                    if name.split("/")[0] in tops:
-                        z.writestr(name, w.read(name))
+        for name in sorted(entries):          # the same files give the same zip
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type, info.external_attr = zipfile.ZIP_DEFLATED, 0o644 << 16
+            z.writestr(info, entries[name])
     (WEB / "py" / "bundle.zip").write_bytes(buf.getvalue())
     print(f"bundle.zip: {len(buf.getvalue()) // 1024} KiB")
 
 
-def build_page(gui: Path, owner: str | None = None, group: str | None = None) -> None:
+def build_page(gui: Path, owner: str | None = None, group: str | None = None,
+               releases: str | None = None) -> None:
     static = gui / "src" / "unseenet_gui" / "static"
     shutil.rmtree(WEB / "static", ignore_errors=True)
     shutil.copytree(static, WEB / "static")
@@ -128,12 +141,13 @@ def build_page(gui: Path, owner: str | None = None, group: str | None = None) ->
     anchor = '<link rel="stylesheet" href="/static/app.css">'
     if anchor not in html:
         sys.exit("unseenet-gui's index.html changed: update build_page()")
-    pin = (f'<script>window.UNSEENET_ANCHOR = {json.dumps({"owner": owner, "group": group})};</script>\n'
-           if owner and group else "")                 # a test list instead of the project's
+    # a test list instead of the project's; data, not a script (the page's policy runs no inline code)
+    pin = (f'<script type="application/json" id="unseenet-anchor">{json.dumps({"owner": owner, "group": group, "releases": releases})}</script>\n'
+           if owner and group else "")
     html = html.replace(anchor, anchor + '\n<link rel="stylesheet" href="/entrance.css">\n' + pin +
                         '<script src="/lib.js"></script>\n<script src="/shim.js"></script>')
     html = html.replace("<title>Unseenet</title>", "<title>Unseenet on the web</title>")
-    # an app for the home screen (the manifest, and sw.js from build_sw)
+    # an app for the home screen (the manifest, and web/sw.js)
     html = html.replace("</head>", '<link rel="manifest" href="/app/manifest.webmanifest">\n'
                         '<meta name="theme-color" content="#10302a">\n'
                         '<link rel="apple-touch-icon" href="/app/apple-touch-icon.png">\n'
@@ -142,18 +156,59 @@ def build_page(gui: Path, owner: str | None = None, group: str | None = None) ->
     (WEB / "index.html").write_text(html)
 
 
-def build_sw() -> None:
-    """sw.js, with a version that changes whenever anything it keeps changes."""
-    h = hashlib.sha256()
-    for f in sorted(p for d in ("static", "pyodide", "py", "app") for p in (WEB / d).rglob("*") if p.is_file()):
-        h.update(f.name.encode() + f.read_bytes())
-    for n in ("index.html", "lib.js", "shim.js", "worker.js", "entrance.css"):
-        h.update((WEB / n).read_bytes())
-    shell = ["/", "/index.html", "/lib.js", "/shim.js", "/worker.js", "/entrance.css"] + sorted(
-        "/" + p.relative_to(WEB).as_posix() for d in ("static", "pyodide", "py", "app")
-        for p in (WEB / d).rglob("*") if p.is_file() and p.suffix != ".py")
-    sw = (WEB / "sw.template.js").read_text().replace("__VERSION__", h.hexdigest()[:16])
-    (WEB / "sw.js").write_text(sw.replace("__SHELL__", json.dumps(shell, indent=0)))
+# --- the release (UN-RFC 0043 section 7.2) -----------------------------------
+
+TOP_FILES = ["index.html", "lib.js", "shim.js", "worker.js", "entrance.css", "icon.svg", "sw.js",
+             "version.json", "unseenet-entrances.template.html"]
+DIRS = ["static", "pyodide", "py", "app"]
+
+
+def release_files(web: Path = WEB) -> list[str]:
+    """Every file an entrance serves from a build, relative to web/."""
+    files = [n for n in TOP_FILES if (web / n).is_file()]
+    for d in DIRS:
+        files += [p.relative_to(web).as_posix() for p in (web / d).rglob("*")
+                  if p.is_file() and p.suffix != ".py" and "__pycache__" not in p.parts]
+    return sorted(files)
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def sources_of(**paths: Path) -> str:
+    def rev(p: Path) -> str:
+        r = subprocess.run(["git", "-C", str(p), "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else "local"
+    return ", ".join(f"{name.replace('_', '-')} {rev(p)}" for name, p in paths.items())
+
+
+def write_version(version: str, built: str) -> None:
+    """version.json, and release.sums: the SHA-256 of every file served."""
+    (WEB / "version.json").write_text(json.dumps({"version": version, "built": built}) + "\n")
+    lines = [f"{sha256(WEB / f)}  {f}" for f in release_files()]
+    (WEB / "release.sums").write_text("\n".join(lines) + "\n")
+
+
+def write_release(out: Path) -> Path:
+    """unseenet-web-<version>.zip and the text for unseenet.releases."""
+    info = json.loads((WEB / "version.json").read_text())
+    version = info["version"]
+    out.mkdir(parents=True, exist_ok=True)
+    zpath = out / f"unseenet-web-{version}.zip"
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in release_files():
+            zi = zipfile.ZipInfo(f, date_time=(1980, 1, 1, 0, 0, 0))
+            zi.compress_type, zi.external_attr = zipfile.ZIP_DEFLATED, 0o644 << 16
+            z.writestr(zi, (WEB / f).read_bytes())
+    sums = (WEB / "release.sums").read_text()
+    text = (f"Unseenet web client {version}\n\nBuilt from {info['built']}.\n\n"
+            f"{sums}{sha256(zpath)}  {zpath.name}\n")
+    post = out / f"unseenet-web-{version}.txt"
+    post.write_text(text)
+    print(f"release {version}: {zpath.name} ({zpath.stat().st_size // (1024 * 1024)} MiB), {post.name}")
+    return post
 
 
 # --- the jump page: one file, no imports (UN-RFC 0043 section 8.7) ------------
@@ -218,7 +273,8 @@ def build_jump(owner: str | None, group: str | None) -> None:
 
 # --- the client in a file (UN-RFC 0043 section 8.7) ----------------------------
 
-FILE_MODULES = [JS / "vendor" / "noble.js", JS / "encoding.js", JS / "article.js", JS / "entrances.js"]
+FILE_MODULES = [JS / "vendor" / "noble.js", JS / "encoding.js", JS / "article.js", JS / "entrances.js",
+                JS / "releases.js"]
 
 
 def build_file(bundle_from: str, owner: str | None, group: str | None) -> Path:
@@ -271,6 +327,10 @@ def main() -> None:
     ap.add_argument("--gui", help="unseenet-gui checkout (default: clone from GitHub)")
     ap.add_argument("--list-owner", help="test only: trust this key's list instead of the project's")
     ap.add_argument("--list-group", help="test only: the group of that list")
+    ap.add_argument("--releases-group", help="test only: that key's group of versions")
+    ap.add_argument("--version", help="default: the date and time now, UTC (YYYYMMDD.HHMM)")
+    ap.add_argument("--release-out", type=Path, metavar="DIR",
+                    help="also write the release: the zip and the text for unseenet.releases")
     ap.add_argument("--jump-only", action="store_true", help="build only the jump page")
     ap.add_argument("--file-from", metavar="ENTRANCE",
                     help="also build the client in a file, with the signed list from this entrance")
@@ -281,12 +341,15 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         core = source("core", args.core, Path(tmp))
         gui = source("gui", args.gui, Path(tmp))
-        build_page(gui, args.list_owner, args.list_group)
+        build_page(gui, args.list_owner, args.list_group, args.releases_group)
         # lib.js: checking signed lists in the page (the same code as the jump page)
         (WEB / "lib.js").write_text(bundle_modules(FILE_MODULES).replace("import.meta.url", "self.location.href"))
         build_pyodide()
         build_bundle(core, gui)
-        build_sw()
+        version = args.version or time.strftime("%Y%m%d.%H%M", time.gmtime())
+        write_version(version, sources_of(unseenet=core, unseenet_gui=gui, unseenet_entrance=ROOT))
+    if args.release_out:
+        write_release(args.release_out)
     if args.file_from:
         build_file(args.file_from, args.list_owner, args.list_group)
     print("web client built in", WEB)

@@ -1,11 +1,14 @@
-"""Fetch the signed list of entrances from the network (UN-RFC 0043 section 8.2).
+"""Fetch signed lists from the network: the list of entrances (UN-RFC 0043
+section 8.2) and the versions of the web client (section 7.2).
 
-The entrance serves the list as ``/.well-known/unseenet-entrances.json`` so that
-web clients and the jump page can learn about other entrances. It keeps the
+The entrance serves them as ``/.well-known/unseenet-entrances.json`` and
+``/.well-known/unseenet-releases.json``, so that web clients and the jump page
+can learn about other entrances and newer versions. It keeps the
 raw articles exactly as the network has them: the group's manifest (signed by
 its owner) and its newest posts (signed by the owner or a poster). It checks
 nothing itself - clients check every signature against the key they pin - so
-an entrance can withhold entrances but never add one.
+an entrance can withhold entrances or versions but never add one. (Updating
+its own web client, release.py checks them itself.)
 
 Fetched over Tor from the known nodes, about once an hour.
 """
@@ -23,6 +26,7 @@ from python_socks.async_.asyncio import Proxy
 log = logging.getLogger("unseenet-entrance")
 
 PROJECT_GROUP = "unseenet.entrances@ph5fc5hop5232qsz"
+RELEASES_GROUP = "unseenet.releases@ph5fc5hop5232qsz"
 KEEP_POSTS = 5               # the newest few; clients take the newest valid one
 REFRESH = 3600
 
@@ -96,13 +100,26 @@ async def fetch_once(cache: ListCache, onion: str, socks_host: str, socks_port: 
         writer.close()
 
 
-async def keep_fresh(cache: ListCache, nodes: list[str], socks_host: str, socks_port: int) -> None:
+async def fetch_from_any(cache: ListCache, nodes: list[str], socks_host: str, socks_port: int) -> bool:
+    for onion in random.sample(nodes, len(nodes)):
+        try:
+            if await fetch_once(cache, onion, socks_host, socks_port):
+                return True
+        except Exception as exc:              # noqa: BLE001  next node
+            log.warning("%s: %s: %s", cache.group.partition("@")[0], onion[:12], type(exc).__name__)
+    return False
+
+
+async def keep_fresh(caches: list[ListCache], nodes: list[str], socks_host: str, socks_port: int,
+                     on_fresh=None) -> None:
+    """Fetch every list about once an hour; then ``on_fresh()`` (updating the web client)."""
     await asyncio.sleep(5)                       # let Tor settle after a restart
     while True:
-        for onion in random.sample(nodes, len(nodes)):
+        for cache in caches:
+            await fetch_from_any(cache, nodes, socks_host, socks_port)
+        if on_fresh is not None:
             try:
-                if await fetch_once(cache, onion, socks_host, socks_port):
-                    break
-            except Exception as exc:              # noqa: BLE001  next node
-                log.warning("list of entrances: %s: %s", onion[:12], type(exc).__name__)
-        await asyncio.sleep(REFRESH if cache.manifest else 300)
+                await on_fresh()
+            except Exception as exc:              # noqa: BLE001  try again next time
+                log.warning("updating the web client: %s", exc)
+        await asyncio.sleep(REFRESH if all(c.manifest for c in caches) else 300)
