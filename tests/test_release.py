@@ -41,6 +41,14 @@ def test_parse_and_order():
     assert [x.version for x in found] == ["20261021.1000", "20261021.900"]   # by number, not text
 
 
+def test_as_a_node_serves_it():
+    """Nodes add Path and Xref for newsreaders; they are not part of the signed article."""
+    c = cache_with(body())
+    add = lambda raw: raw.replace(b"\r\n\r\n", b"\r\nPath: not-for-mail\r\nXref: unseenet x:1\r\n\r\n", 1)  # noqa: E731
+    c.manifest, c.posts = add(c.manifest), [add(p) for p in c.posts]
+    assert [r.version for r in release.valid_releases(c, lab.OWNER.key_text)] == ["20261021.1000"]
+
+
 def test_refused():
     for bad in ("Unseenet web client 1.x\n", body(extra=f"{H}  ../etc/passwd\n"),
                 body().replace("worker.js", "other.js")):
