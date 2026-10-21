@@ -72,6 +72,9 @@ async function handle(m) {
     } else if (m.type === "vault-in") {
       wb.vault_in(new Uint8Array(m.bytes));
       post({ type: "reply", id: m.id, ok: true });
+    } else if (m.type === "entrance") {
+      wb.switch_entrance(m.url);
+      post({ type: "reply", id: m.id, ok: true });
     } else if (m.type === "vault-out") {
       const b = wb.vault_out();
       const bytes = b ? b.toJs() : null;
