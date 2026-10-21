@@ -27,6 +27,12 @@
 # is never updated by itself: run this script again for that.
 #   BUILD=local         build the web client here instead (not signed)
 #
+# Also a mirror of Unseenet's releases, if you like (unseenet/unseenet#264): clients
+# then update from here, over Tor, when GitHub is blocked. Kept up to date by itself.
+#   MIRROR=portable     the portable zips and the USB zip (about 300 MB per channel)
+#   MIRROR=all          also a stick's update and its image (about 1.1 GB per channel)
+#   MIRROR=off          no mirror (the default; also turns an existing one off)
+#
 # Also sets up Tor (SOCKS for the tunnels and an onion address for the entrance),
 # and runs the entrance as its own user with a journal kept in memory only:
 # nothing about visitors is written to disk.
@@ -40,6 +46,7 @@ TLSDIR=/etc/unseenet-entrance/tls
 ACME=/var/lib/unseenet-entrance/acme
 CERTBOT=/opt/certbot/bin/certbot
 WEBREL=/var/lib/unseenet-entrance/web     # versions of the web client; "current" is served
+MIRRORDIR=/var/lib/unseenet-entrance/mirror
 
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 
@@ -117,6 +124,16 @@ if [ -n "${LIST_GROUP:-}" ]; then setting ENTRANCE_LIST_GROUP "$LIST_GROUP"; fi
 if [ -n "${LIST_OWNER:-}" ]; then setting ENTRANCE_RELEASE_OWNER "$LIST_OWNER"; fi
 if [ -n "${RELEASES_GROUP:-}" ]; then setting ENTRANCE_RELEASE_GROUP "$RELEASES_GROUP"; fi
 setting ENTRANCE_ONION "$ONION"
+mkdir -p "$MIRRORDIR"
+chown unseenet-entrance:unseenet-entrance "$MIRRORDIR"
+setting ENTRANCE_MIRROR_DIR "$MIRRORDIR"
+case "${MIRROR:-}" in
+  portable|all) setting ENTRANCE_MIRROR "$MIRROR"
+                echo "== a mirror of Unseenet's releases ($MIRROR), fetched within the hour" ;;
+  off)          setting ENTRANCE_MIRROR off; rm -rf "${MIRRORDIR:?}"/* ;;
+  "")           grep -q '^ENTRANCE_MIRROR=' "$ENVFILE" || setting ENTRANCE_MIRROR off ;;
+  *)            echo "unknown MIRROR=$MIRROR (portable, all or off)"; exit 1 ;;
+esac
 
 echo "== the web client"
 mkdir -p "$WEBREL"
@@ -164,7 +181,7 @@ StandardError=journal
 PrivateTmp=yes
 ProtectSystem=strict
 # where the web client updates itself (UN-RFC 0043 7.3); nothing else is written
-ReadWritePaths=$WEBREL
+ReadWritePaths=$WEBREL $MIRRORDIR
 ProtectHome=yes
 NoNewPrivileges=yes
 LimitCORE=0

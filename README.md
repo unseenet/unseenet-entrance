@@ -99,7 +99,18 @@ sections 7.2-7.3):
   `ENTRANCE_AUTO_UPDATE=off` in `/etc/unseenet-entrance.env` stops it.
 
 Neither needs GitHub: the posts are read through the network, and the files
-can come from any entrance. A build of your own (`BUILD=local sh install.sh`)
+can come from any entrance.
+
+## A mirror of the releases
+
+An entrance can also mirror Unseenet's own releases, so that clients can update
+over Tor when GitHub is blocked: `MIRROR=portable sh install.sh` (the portable
+zips and the USB zip, about 300 MB per channel) or `MIRROR=all` (also a stick's
+update and image, about 1.1 GB). It follows `unseenet.releases`, fetches each
+new version from GitHub or another mirror, checks every file against the
+signed checksums, keeps only the newest, and serves it at `/mirror/<channel>/`
+on its onion address and its open address. Clients find it in the signed list
+of entrances and use nothing that does not match the signature. A build of your own (`BUILD=local sh install.sh`)
 runs, but the app says it is not signed.
 
 ## Develop

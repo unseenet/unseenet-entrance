@@ -76,6 +76,9 @@ class Config:
     release_owner: str = ""                  # test only: the key that owns both (default: the project's)
     releases_dir: Path | None = None         # versions live here, web_dir is its "current" (7.3)
     auto_update: str = "web"                 # "web": the web client updates itself; "off"
+    mirror: str = ""                         # "portable" or "all": mirror Unseenet's releases (mirror.py)
+    mirror_dir: Path | None = None
+    mirror_channels: tuple[str, ...] = ("stable", "dev")
     info: dict = field(default_factory=dict)  # /.well-known/unseenet-entrance
 
     @classmethod
@@ -104,6 +107,14 @@ class Config:
         if e("ENTRANCE_RELEASES_DIR"):
             c.releases_dir = Path(e("ENTRANCE_RELEASES_DIR"))
         c.auto_update = e("ENTRANCE_AUTO_UPDATE", c.auto_update)
+        c.mirror = e("ENTRANCE_MIRROR", c.mirror).strip().lower()
+        if c.mirror in ("off", "no", "0"):
+            c.mirror = ""
+        if e("ENTRANCE_MIRROR_DIR"):
+            c.mirror_dir = Path(e("ENTRANCE_MIRROR_DIR"))
+        channels = tuple(x for x in e("ENTRANCE_MIRROR_CHANNELS", "").replace(",", " ").split()
+                         if x in ("stable", "dev"))
+        c.mirror_channels = channels or c.mirror_channels
         if e("ENTRANCE_ACME_DIR"):
             c.acme_dir = Path(e("ENTRANCE_ACME_DIR"))
         c.info = {
@@ -287,7 +298,16 @@ def web_version(cfg: Config) -> str:
 
 async def entrance_info(request: web.Request) -> web.Response:
     cfg: Config = request.app["cfg"]
-    return web.json_response({**cfg.info, "web": web_version(cfg)})
+    mirror = request.app["mirror"].versions()
+    return web.json_response({**cfg.info, "web": web_version(cfg), **({"mirror": mirror} if mirror else {})})
+
+
+async def mirror_file(request: web.Request) -> web.StreamResponse:
+    """A file of a release this entrance mirrors (unseenet/unseenet#264)."""
+    f = request.app["mirror"].file(request.match_info["channel"], request.match_info["name"])
+    if f is None:
+        raise web.HTTPNotFound()
+    return web.FileResponse(f, headers={"Content-Type": "application/octet-stream"})
 
 
 async def releases_list(request: web.Request) -> web.Response:
@@ -347,11 +367,14 @@ def make_app(cfg: Config) -> web.Application:
     app["allowed"] = cfg.allowed_nodes()
     app["list"] = ListCache(cfg.list_group)
     app["releases"] = ListCache(cfg.release_group)
+    from .mirror import Mirror
+    app["mirror"] = Mirror(cfg, app["releases"], app["list"])
     app.router.add_get("/onntp", onntp)
     app.router.add_get("/.well-known/unseenet-entrance", entrance_info)
     app.router.add_get("/.well-known/unseenet-entrances.json", entrances_list)
     app.router.add_get("/.well-known/unseenet-releases.json", releases_list)
     app.router.add_get("/nodes.json", nodes_json)
+    app.router.add_get("/mirror/{channel}/{name}", mirror_file)
     app.router.add_get("/unseenet-entrances.html", jump_page)
     app.router.add_get("/{path:.*}", static)
     return app
@@ -412,10 +435,16 @@ async def serve(cfg: Config) -> None:
     nodes = sorted(app["allowed"]) if app["allowed"] else []
     if nodes:
         from .release import Updater
-        updater = Updater(cfg, app["releases"], app["list"])
+        updater, mirror = Updater(cfg, app["releases"], app["list"]), app["mirror"]
+
+        async def on_fresh() -> None:
+            if updater.enabled:
+                await updater.check()
+            if mirror.enabled:
+                await mirror.check()
         asyncio.get_running_loop().create_task(
             keep_fresh([app["list"], app["releases"]], nodes, cfg.socks_host, cfg.socks_port,
-                       on_fresh=updater.check if updater.enabled else None))
+                       on_fresh=on_fresh))
     await web.TCPSite(runner, cfg.host, cfg.port, ssl_context=ctx).start()
     runners.append(runner)
     if cfg.onion_port:      # Tor delivers onion visitors here; never on another interface
