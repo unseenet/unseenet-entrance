@@ -193,10 +193,12 @@ async def _get(session: aiohttp.ClientSession, url: str, limit: int) -> bytes:
     async with session.get(url, timeout=aiohttp.ClientTimeout(total=300)) as r:
         if r.status != 200:
             raise ValueError(f"{url}: HTTP {r.status}")
-        data = await r.content.read(limit + 1)
-        if len(data) > limit:
-            raise ValueError(f"{url}: too large")
-        return data
+        data = bytearray()                # read() gives what has arrived, not all of it
+        async for chunk in r.content.iter_chunked(1 << 16):
+            data += chunk
+            if len(data) > limit:
+                raise ValueError(f"{url}: too large")
+        return bytes(data)
 
 
 async def fetch_files(rel: Release, have: Path | None, entrances: list[str]) -> dict[str, bytes]:
