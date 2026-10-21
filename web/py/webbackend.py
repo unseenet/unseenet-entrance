@@ -93,6 +93,14 @@ def start(entrance_url: str, post_message) -> str:
     return _token
 
 
+def switch_entrance(entrance_url: str) -> None:
+    """Carry on through another entrance: the vault and everything open stay as they are."""
+    import webtransport
+    webtransport.switch(entrance_url)
+    if _runtime is not None and _runtime.session is not None:
+        _runtime.spawn(_runtime.refresh())
+
+
 async def _pump_events() -> None:
     """The GUI's event stream (its /api/events WebSocket), as messages to the page."""
     q = _runtime.listen()

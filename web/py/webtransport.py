@@ -9,6 +9,7 @@ from js import Uint8Array, WebSocket
 from pyodide.ffi import create_proxy, to_js
 
 ENTRANCE = None          # e.g. "wss://entrance.example/onntp"
+OPEN = set()             # the writers of open connections, to close them when switching
 
 
 class WSWriter:
@@ -24,6 +25,7 @@ class WSWriter:
 
     def close(self):
         self._closed = True
+        OPEN.discard(self)
         self.ws.close()
 
     def is_closing(self):
@@ -59,7 +61,9 @@ async def open_connection(address, socks_port=None):
     for name, fn in (("open", on_open), ("message", on_message), ("close", on_close)):
         ws.addEventListener(name, create_proxy(fn))
     await opened
-    return reader, WSWriter(ws)
+    writer = WSWriter(ws)
+    OPEN.add(writer)
+    return reader, writer
 
 
 def install(entrance_url):
@@ -70,3 +74,15 @@ def install(entrance_url):
     from unseenet import nntp
     tor.open_connection = open_connection
     nntp.tor.open_connection = open_connection
+
+
+def switch(entrance_url):
+    """Use another entrance from now on: new connections go there, and the open ones
+    are closed, so the client connects again - through it (UN-RFC 0043 8.3)."""
+    global ENTRANCE
+    ENTRANCE = entrance_url
+    for writer in list(OPEN):
+        try:
+            writer.close()
+        except Exception:      # noqa: BLE001  already gone
+            pass

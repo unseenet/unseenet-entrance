@@ -473,10 +473,9 @@
   }
   function updateBar() {
     if (!bar) return;
-    if (entrance) {
-      bar.querySelector(".uw-text").textContent = onion ? "" :
-        `Open web, through ${entrance.name} - it can see your IP address.`;
-    }
+    bar.querySelector(".uw-text").textContent = entrance
+      ? `Open web, through ${entrance.name} - it can see your IP address.`
+      : onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address.";
     const unlocked = typeof S !== "undefined" && S.state && S.state.unlocked;
     bar.querySelector(".uw-open").hidden = !!unlocked || kept;
     const keep = bar.querySelector(".uw-keep");
@@ -498,6 +497,16 @@
     boot.hidden = booted && !failed;
     boot.querySelector(".uw-boot-text").textContent = bootText;
   }
+  // Carry on through another entrance: only the tunnel changes. The page, the vault
+  // and everything open stay as they are, at this address.
+  async function useEntrance(e) {
+    const ws = new URL("onntp", e.url);
+    ws.protocol = ws.protocol === "https:" ? "wss:" : "ws:";
+    await call({ type: "entrance", url: ws.href });
+    entrance = new URL(e.url).origin === location.origin ? null : e;
+    updateBar();
+  }
+
   // Other entrances: the signed list, which of them answer, and the list as a file
   // for when this one is blocked (UN-RFC 0043 section 8).
   async function entrancesDialog() {
@@ -506,7 +515,8 @@
     const status = el("p", { class: "uw-status" }, "Checking the signed list of entrances ...");
     d.append(el("h2", {}, "Other entrances"),
       el("p", {}, "Unseenet can be reached through several web entrances, run by different people. " +
-        "All of them serve the same signed client, so any of them will do: if this one is slow, blocked or gone, use another."),
+        "All of them serve the same signed client, so any of them will do: if this one is slow, blocked or gone, use another. " +
+        "Use this one switches at once: the page and your vault stay as they are, only the connection goes through the other entrance."),
       el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Entrance"), el("th", {}, "Address"), el("th", {}, ""))), rows),
       status,
       el("p", {}, "Your vault kept on this device stays at this entrance's address. To use it at another one, ",
@@ -526,21 +536,28 @@
     status.textContent = `Signed list of ${list.updated || list.date.toISOString().slice(0, 10)}${ANCHOR.owner ? " (a TEST key)" : ""}. Asking each entrance ...`;
     let waiting = 0;
     for (const e of list.entrances) {
-      const here = e.url && new URL(e.url).origin === location.origin;
-      const state = el("td", {}, e.url ? (here ? "this one" : "...") : "Tor Browser only");
+      const here = e.url && (entrance ? e.url === entrance.url : new URL(e.url).origin === location.origin);
+      const state = el("td", {}, e.url ? (here ? "in use" : "...") : "Tor Browser only");
       const addr = e.url ? new URL(e.url).host : e.onion.slice(0, 16) + "....onion";
       rows.append(el("tr", { title: e.description || "" }, el("td", {}, e.name), el("td", {}, addr), state));
       if (e.url && !here) {
         waiting++;
         answers(e.url).then((ok) => {
           state.textContent = "";
-          state.append(ok ? el("a", { class: "uw-btn", href: e.url, target: "_blank", rel: "noopener" }, "Open")
+          state.append(ok ? el("button", { class: "uw-btn uw-dirty", on: { onclick: async () => {
+              await useEntrance(e);
+              d.close();
+            } } }, "Use this one")
                           : el("span", { class: "uw-warn" }, "does not answer"));
           if (--waiting === 0) status.textContent = status.textContent.replace(" Asking each entrance ...", "");
         });
       }
     }
-    if (!waiting) status.textContent = status.textContent.replace(" Asking each entrance ...", "");
+    if (!waiting) {
+      status.textContent = status.textContent.replace(" Asking each entrance ...", "") +
+        " Right now this is the only entrance on the open web; the others are reached with Tor Browser. " +
+        "There will be more as people run their own (see unseenet.org/web).";
+    }
   }
 
   function aboutDialog() {
