@@ -49,8 +49,13 @@ function render() {
       where, el("td", {}, el("span", { class: "st " + st }, label))));
   }
   const ok = list.entrances.filter((e) => status.get(e.url) === "yes");
+  const web = list.entrances.filter((e) => e.url);
+  const checking = web.some((e) => (status.get(e.url) || "checking") === "checking");
   $("random").disabled = !ok.length;
-  $("random").textContent = ok.length ? `Open a random one that answers (${ok.length})` : "Waiting for an entrance to answer …";
+  $("random").textContent = ok.length ? `Open a random one that answers (${ok.length})`
+    : checking ? "Asking the entrances …"
+    : !web.length ? "No entrance on this list is on the open web - use Tor Browser and an .onion address below"
+    : "No entrance answers right now - this network may block them. Try later, or Tor Browser.";
 }
 
 async function probe(url) {
