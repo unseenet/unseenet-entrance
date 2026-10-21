@@ -10,3 +10,4 @@ web/py/bundle.zip
 web/unseenet-entrances.template.html
 web/unseenet-web.html
 web/sw.js
+web/lib.js

@@ -7,8 +7,9 @@
 // other entrances (/.well-known/), the jump page and the client in a file.
 const VERSION = "__VERSION__";
 const CACHE = "unseenet-" + VERSION;
-const SHELL = ["/", "/shim.js", "/worker.js", "/entrance.css", "/static/app.css", "/static/app.js",
-  "/static/icon.svg", "/static/icon-ink.svg", "/app/manifest.webmanifest", "/app/icon-192.png"];
+// Everything the client needs, kept at install: so it also starts when its
+// entrance is gone, and talks through another one (UN-RFC 0043 8.3).
+const SHELL = __SHELL__;
 const KEEP = /^\/(pyodide|py|static|app)\//;
 const NEVER = /^\/(onntp|\.well-known\/|api\/|unseenet-entrances\.html|unseenet-web\.html)/;
 

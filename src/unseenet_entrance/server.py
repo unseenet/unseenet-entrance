@@ -229,7 +229,8 @@ async def onntp(request: web.Request) -> web.StreamResponse:
 SECURITY_HEADERS = {
     # nothing from elsewhere (UN-RFC 0043 6.4)
     # 'wasm-unsafe-eval': the client's Python (Pyodide) is WebAssembly; no other eval
-    "Content-Security-Policy": ("default-src 'self'; connect-src 'self' ws: wss:; "
+    # connect-src https: - to ask other entrances whether they answer (UN-RFC 0043 8.3)
+    "Content-Security-Policy": ("default-src 'self'; connect-src 'self' https: http: ws: wss:; "
                                 "img-src 'self' data: blob:; style-src 'self'; "
                                 "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
                                 "object-src 'none'; base-uri 'none'; "
@@ -244,7 +245,7 @@ SECURITY_HEADERS = {
 # The worker runs Python (Pyodide), which needs eval to load its compiled
 # modules. A worker gets the policy of its own script, so only the worker - which
 # has no access to the page - may eval; the page keeps the strict policy above.
-WORKER_CSP = ("default-src 'self'; connect-src 'self' ws: wss:; "
+WORKER_CSP = ("default-src 'self'; connect-src 'self' https: http: ws: wss:; "
               "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'")
 
 

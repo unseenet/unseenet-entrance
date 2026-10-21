@@ -101,9 +101,47 @@
       bootText = "The client could not start: " + err.message; updateBoot(true);
     }));
   } else {
-    startWorker(new Worker("/worker.js", { type: "module" }), {});
     // an app on the home screen: the client kept on the device by a service worker
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+    chooseTunnel().catch(() => null).then((ws) => startWorker(new Worker("/worker.js", { type: "module" }), ws ? { entrance: ws } : {}));
+  }
+
+  // --- when this entrance is gone: another one from the signed list (UN-RFC 0043 8.3) --
+  // The page and the client may come from the device (the service worker); only the
+  // tunnel needs an entrance, and any listed one will do.
+  const LIST_KEY = "unseenet-entrances";            // the last signed list seen; checked again on use
+  const ANCHOR = window.UNSEENET_ANCHOR || {};
+  const verifyList = (b) => (ANCHOR.owner ? __m.entrances.verifyBundle(b, ANCHOR.owner, ANCHOR.group)
+                                          : __m.entrances.verifyBundle(b));
+  async function answers(base, ms = 6000) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try { return (await realFetchEarly(new URL(".well-known/unseenet-entrance", base), { signal: ctl.signal, cache: "no-store" })).ok; }
+    catch { return false; } finally { clearTimeout(t); }
+  }
+  async function refreshList() {
+    try {
+      const b = await (await realFetchEarly("/.well-known/unseenet-entrances.json", { cache: "no-store" })).json();
+      verifyList(b);
+      localStorage.setItem(LIST_KEY, JSON.stringify(b));
+    } catch { /* keep the one we have */ }
+  }
+  function knownList() {
+    try { return verifyList(JSON.parse(localStorage.getItem(LIST_KEY))); } catch { return null; }
+  }
+  async function chooseTunnel() {
+    if (await answers(location.origin + "/")) { refreshList(); return null; }     // our own: as always
+    bootText = "This entrance does not answer - looking for another one ..."; updateBoot();
+    const list = knownList();
+    if (!list) return null;
+    const others = list.entrances.filter((e) => e.url && new URL(e.url).origin !== location.origin);
+    const ok = (await Promise.all(others.map(async (e) => ((await answers(e.url)) ? e : null)))).filter(Boolean);
+    if (!ok.length) return null;              // the client opens anyway: the vault can still be saved
+    entrance = ok[Math.floor(Math.random() * ok.length)];
+    updateBar();
+    const ws = new URL("onntp", entrance.url);
+    ws.protocol = ws.protocol === "https:" ? "wss:" : "ws:";
+    return ws.href;
   }
 
   // --- the API, answered by the worker ------------------------------------
@@ -264,7 +302,7 @@
   }
   function updateBar() {
     if (!bar) return;
-    if (FILE && entrance) {
+    if (entrance) {
       bar.querySelector(".uw-text").textContent = onion ? "" :
         `Open web, through ${entrance.name} - it can see your IP address.`;
     }

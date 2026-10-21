@@ -120,7 +120,7 @@ def build_bundle(core: Path, gui: Path) -> None:
     print(f"bundle.zip: {len(buf.getvalue()) // 1024} KiB")
 
 
-def build_page(gui: Path) -> None:
+def build_page(gui: Path, owner: str | None = None, group: str | None = None) -> None:
     static = gui / "src" / "unseenet_gui" / "static"
     shutil.rmtree(WEB / "static", ignore_errors=True)
     shutil.copytree(static, WEB / "static")
@@ -128,8 +128,10 @@ def build_page(gui: Path) -> None:
     anchor = '<link rel="stylesheet" href="/static/app.css">'
     if anchor not in html:
         sys.exit("unseenet-gui's index.html changed: update build_page()")
-    html = html.replace(anchor, anchor + '\n<link rel="stylesheet" href="/entrance.css">\n'
-                        '<script src="/shim.js"></script>')
+    pin = (f'<script>window.UNSEENET_ANCHOR = {json.dumps({"owner": owner, "group": group})};</script>\n'
+           if owner and group else "")                 # a test list instead of the project's
+    html = html.replace(anchor, anchor + '\n<link rel="stylesheet" href="/entrance.css">\n' + pin +
+                        '<script src="/lib.js"></script>\n<script src="/shim.js"></script>')
     html = html.replace("<title>Unseenet</title>", "<title>Unseenet on the web</title>")
     # an app for the home screen (the manifest, and sw.js from build_sw)
     html = html.replace("</head>", '<link rel="manifest" href="/app/manifest.webmanifest">\n'
@@ -145,9 +147,13 @@ def build_sw() -> None:
     h = hashlib.sha256()
     for f in sorted(p for d in ("static", "pyodide", "py", "app") for p in (WEB / d).rglob("*") if p.is_file()):
         h.update(f.name.encode() + f.read_bytes())
-    for n in ("index.html", "shim.js", "worker.js", "entrance.css"):
+    for n in ("index.html", "lib.js", "shim.js", "worker.js", "entrance.css"):
         h.update((WEB / n).read_bytes())
-    (WEB / "sw.js").write_text((WEB / "sw.template.js").read_text().replace("__VERSION__", h.hexdigest()[:16]))
+    shell = ["/", "/index.html", "/lib.js", "/shim.js", "/worker.js", "/entrance.css"] + sorted(
+        "/" + p.relative_to(WEB).as_posix() for d in ("static", "pyodide", "py", "app")
+        for p in (WEB / d).rglob("*") if p.is_file() and p.suffix != ".py")
+    sw = (WEB / "sw.template.js").read_text().replace("__VERSION__", h.hexdigest()[:16])
+    (WEB / "sw.js").write_text(sw.replace("__SHELL__", json.dumps(shell, indent=0)))
 
 
 # --- the jump page: one file, no imports (UN-RFC 0043 section 8.7) ------------
@@ -275,7 +281,9 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         core = source("core", args.core, Path(tmp))
         gui = source("gui", args.gui, Path(tmp))
-        build_page(gui)
+        build_page(gui, args.list_owner, args.list_group)
+        # lib.js: checking signed lists in the page (the same code as the jump page)
+        (WEB / "lib.js").write_text(bundle_modules(FILE_MODULES).replace("import.meta.url", "self.location.href"))
         build_pyodide()
         build_bundle(core, gui)
         build_sw()
