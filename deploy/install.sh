@@ -138,8 +138,9 @@ esac
 echo "== the web client"
 mkdir -p "$WEBREL"
 chown unseenet-entrance:unseenet-entrance "$WEBREL"
-as_entrance() {      # a command as the entrance's user, with its settings
-  ( set -a; . "$ENVFILE"; set +a; runuser -u unseenet-entrance -- "$@" )
+as_entrance() {      # a command as the entrance's user, with its settings - from /, so that
+  # no file in the current folder (an inspect.py in /tmp, say) is taken for Python's own
+  ( cd /; set -a; . "$ENVFILE"; set +a; runuser -u unseenet-entrance -- "$@" )
 }
 build_here() {
   echo "   building it here (not signed) ..."
