@@ -90,9 +90,10 @@ def signed_bodies(cache, owner: str, group: str) -> list[str]:
     from unseenet.core import crypto
     from unseenet.core.article import Article
     from unseenet.core.groups import Manifest
+    from unseenet.nntp import strip_reader_headers      # Path and Xref, added by the node
     if not cache.manifest:
         return []
-    art = Article.from_bytes(cache.manifest)
+    art = Article.from_bytes(strip_reader_headers(cache.manifest))
     art.verify_signature()
     m = Manifest.from_article(art)
     if m.group_id != group or crypto.key_to_text(m.owner) != owner:
@@ -100,7 +101,7 @@ def signed_bodies(cache, owner: str, group: str) -> list[str]:
     out = []
     for raw in cache.posts:
         try:
-            post = Article.from_bytes(raw)
+            post = Article.from_bytes(strip_reader_headers(raw))
             post.verify_signature()
         except Exception:                 # noqa: BLE001  not a valid post: skip it
             continue
