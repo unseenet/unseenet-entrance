@@ -21,4 +21,10 @@ html.uw #root { flex: 1; min-height: 0; height: auto; }
 .uw-dialog table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .uw-dialog th, .uw-dialog td { text-align: left; padding: 6px; border-bottom: 1px solid #c9e2d9; vertical-align: top; }
 .uw-dialog .uw-warn { color: #8a5a00; font-weight: 700; }
-@media (max-width: 600px) { .uw-bar { font-size: 12px; } .uw-text { flex-basis: 100%; } }
+@media (max-width: 760px) {        /* phones: one slim line */
+  .uw-bar { font-size: 12px; padding: 4px 10px; gap: 4px 10px; flex-wrap: nowrap; }
+  .uw-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .uw-grow, .uw-bar a.uw-link { display: none; }
+  .uw-link { white-space: nowrap; }
+  .uw-btn { padding: 5px 8px; white-space: nowrap; }
+}

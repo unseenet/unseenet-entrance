@@ -189,7 +189,9 @@
     bar.querySelector(".uw-open").hidden = !!unlocked;
     const save = bar.querySelector(".uw-save");
     save.classList.toggle("uw-dirty", vaultDirty);
-    save.textContent = vaultDirty ? "Save vault file (changed)" : "Save vault file";
+    const narrow = window.matchMedia("(max-width: 760px)").matches;
+    save.textContent = narrow ? (vaultDirty ? "Save vault •" : "Save vault") :
+      (vaultDirty ? "Save vault file (changed)" : "Save vault file");
   }
   function updateBoot(failed) {
     if (!boot) return;
@@ -225,7 +227,7 @@
     file.onchange = () => { if (file.files[0]) openVault(file.files[0]); file.value = ""; };
     bar = el("div", { class: "uw-bar" + (onion ? " uw-tor" : ""), role: "status" },
       el("span", { class: "uw-text" }, onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address."),
-      el("button", { class: "uw-link", on: { onclick: aboutDialog } }, "What does that mean?"),
+      el("button", { class: "uw-link", on: { onclick: aboutDialog } }, window.matchMedia("(max-width: 760px)").matches ? "Why?" : "What does that mean?"),
       FILE ? el("button", { class: "uw-link", on: { onclick: () => { if (!vaultDirty || confirm("Your vault has changes you have not saved. Leave anyway?")) location.reload(); } } }, "Another entrance")
         : el("a", { class: "uw-link", href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "Other entrances"),
       el("span", { class: "uw-grow" }),
