@@ -281,7 +281,7 @@ async def home(request: web.Request, handler):
     address is the one that keeps working when the name is blocked. The tunnel and
     what the entrance says about itself answer on every name."""
     target = request.app["cfg"].home
-    if target and request.method == "GET" and not request.path.startswith(("/onntp", "/.well-known/")):
+    if target and request.method in ("GET", "HEAD") and not request.path.startswith(("/onntp", "/.well-known/")):
         host = request.host.rsplit(":", 1)[0].strip("[]").lower()
         own = target.split("://", 1)[-1].split("/", 1)[0].strip("[]").lower()
         if host != own and not host.endswith(".onion") and host not in ("127.0.0.1", "localhost", "::1"):
