@@ -498,6 +498,51 @@
     boot.hidden = booted && !failed;
     boot.querySelector(".uw-boot-text").textContent = bootText;
   }
+  // Other entrances: the signed list, which of them answer, and the list as a file
+  // for when this one is blocked (UN-RFC 0043 section 8).
+  async function entrancesDialog() {
+    const d = el("dialog", { class: "uw-dialog" });
+    const rows = el("tbody");
+    const status = el("p", { class: "uw-status" }, "Checking the signed list of entrances ...");
+    d.append(el("h2", {}, "Other entrances"),
+      el("p", {}, "Unseenet can be reached through several web entrances, run by different people. " +
+        "All of them serve the same signed client, so any of them will do: if this one is slow, blocked or gone, use another."),
+      el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Entrance"), el("th", {}, "Address"), el("th", {}, ""))), rows),
+      status,
+      el("p", {}, "Your vault kept on this device stays at this entrance's address. To use it at another one, ",
+        el("button", { class: "uw-link", on: { onclick: saveVault } }, "save it as a file"), " and open it there."),
+      el("h3", {}, "For when entrances are blocked"),
+      el("p", {}, "Keep the list of entrances as a small file. Opened from your own disk, it checks the list's signature, " +
+        "shows which entrances answer and opens one - also when this address does not work. Send it to friends too."),
+      el("div", { class: "uw-row" },
+        el("a", { class: "uw-btn", href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "Save the list as a file"),
+        el("button", { class: "uw-btn", on: { onclick: () => d.close() } }, "Close")));
+    document.body.append(d);
+    d.showModal();
+    d.addEventListener("close", () => d.remove());
+    await refreshList();
+    const list = knownList();
+    if (!list) { status.textContent = "This entrance has no signed list of entrances yet. Try again in a few minutes."; return; }
+    status.textContent = `Signed list of ${list.updated || list.date.toISOString().slice(0, 10)}${ANCHOR.owner ? " (a TEST key)" : ""}. Asking each entrance ...`;
+    let waiting = 0;
+    for (const e of list.entrances) {
+      const here = e.url && new URL(e.url).origin === location.origin;
+      const state = el("td", {}, e.url ? (here ? "this one" : "...") : "Tor Browser only");
+      const addr = e.url ? new URL(e.url).host : e.onion.slice(0, 16) + "....onion";
+      rows.append(el("tr", { title: e.description || "" }, el("td", {}, e.name), el("td", {}, addr), state));
+      if (e.url && !here) {
+        waiting++;
+        answers(e.url).then((ok) => {
+          state.textContent = "";
+          state.append(ok ? el("a", { class: "uw-btn", href: e.url, target: "_blank", rel: "noopener" }, "Open")
+                          : el("span", { class: "uw-warn" }, "does not answer"));
+          if (--waiting === 0) status.textContent = status.textContent.replace(" Asking each entrance ...", "");
+        });
+      }
+    }
+    if (!waiting) status.textContent = status.textContent.replace(" Asking each entrance ...", "");
+  }
+
   function aboutDialog() {
     const rows = [
       ["Groups and nodes can be removed by someone", "No", "No"],
@@ -532,7 +577,7 @@
       el("span", { class: "uw-text" }, onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address."),
       el("button", { class: "uw-link", on: { onclick: aboutDialog } }, window.matchMedia("(max-width: 760px)").matches ? "Why?" : "What does that mean?"),
       FILE ? el("button", { class: "uw-link", on: { onclick: () => { if (!vaultDirty || confirm("Your vault has changes you have not saved. Leave anyway?")) location.reload(); } } }, "Another entrance")
-        : el("a", { class: "uw-link", href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "Other entrances"),
+        : el("button", { class: "uw-link", on: { onclick: entrancesDialog } }, "Other entrances"),
       el("button", { class: "uw-link uw-warn uw-swwarn", hidden: "", on: { onclick: () => alert(
         "This entrance now serves a service worker - the part of the app that the browser fetches by itself - " +
         "that is not in any signed version. It could change what runs here. Unless the entrance's operator says why, " +

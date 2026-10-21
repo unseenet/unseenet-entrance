@@ -16,17 +16,22 @@ html.uw #root { flex: 1; min-height: 0; height: auto; }
 .uw-boot-box { max-width: 420px; padding: 24px; text-align: center; }
 .uw-boot-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
 .uw-boot-note { color: #9cc3b6; font-size: 13px; }
-.uw-dialog { max-width: 620px; width: calc(100% - 32px); border-radius: 12px; border: 1px solid #c9e2d9;
+.uw-dialog { box-sizing: border-box; max-width: min(620px, calc(100vw - 24px)); width: calc(100% - 24px); border-radius: 12px; border: 1px solid #c9e2d9;
   font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; color: #10302a; background: #f4f8f6; }
 .uw-dialog table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .uw-dialog th, .uw-dialog td { text-align: left; padding: 6px; border-bottom: 1px solid #c9e2d9; vertical-align: top; }
 .uw-dialog .uw-warn { color: #8a5a00; font-weight: 700; }
 .uw-bar .uw-warn { color: #ffcf66; font-weight: 700; }
 .uw-dialog .uw-status { min-height: 1.4em; }
-@media (max-width: 760px) {        /* phones: one slim line */
-  .uw-bar { font-size: 12px; padding: 4px 10px; gap: 4px 10px; flex-wrap: nowrap; }
-  .uw-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uw-dialog h3 { font-size: 15px; margin: 18px 0 4px; }
+.uw-dialog td .uw-btn { padding: 2px 10px; }
+.uw-dialog a.uw-btn { text-decoration: none; display: inline-block; }
+@media (max-width: 760px) {        /* phones: the notice on one slim line, the buttons below */
+  .uw-bar { font-size: 12px; padding: 4px 10px; gap: 4px 10px; flex-wrap: wrap; }
+  .uw-text { flex: 1 1 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .uw-grow, .uw-bar a.uw-link { display: none; }
+  .uw-dialog { padding: 14px; }
+  .uw-dialog th, .uw-dialog td { padding: 5px 3px; }
   .uw-link { white-space: nowrap; }
   .uw-btn { padding: 5px 8px; white-space: nowrap; }
 }
