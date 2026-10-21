@@ -40,6 +40,7 @@ from .listfetch import PROJECT_GROUP, ListCache, keep_fresh
 
 mimetypes.add_type("text/javascript", ".mjs")
 mimetypes.add_type("application/wasm", ".wasm")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 ONION_RE = re.compile(r"^[a-z2-7]{56}\.onion$")
 ONNTP_PORT = 119

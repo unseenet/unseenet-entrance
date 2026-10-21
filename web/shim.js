@@ -3,7 +3,10 @@
 // This script runs before the client's app.js and
 //  - answers its fetch("/api/...") and WebSocket("/api/events") from the worker,
 //  - shows, always, that this is the open web (section 6.1),
-//  - opens and saves the vault as a file (section 6.2).
+//  - opens and saves the vault as a file (section 6.2), or - when the person
+//    turns it on - keeps it on this device, still encrypted with their passphrase;
+//  - installs the page as an app (a manifest and a service worker that keeps the
+//    client on the device, so it starts at once from the home screen).
 (() => {
   "use strict";
   // FILE: the client in a file (UN-RFC 0043 8.7) - set by the build, with the signed list
@@ -28,7 +31,7 @@
       const data = JSON.stringify(m.data);
       for (const s of sockets) s._message(data);
     } else if (m.type === "vault-changed") {
-      vaultDirty = true; updateBar();
+      if (kept) keepSoon(); else { vaultDirty = true; updateBar(); }
     } else if (m.type === "boot") {
       bootText = m.text; updateBoot();
     } else if (m.type === "ready") {
@@ -99,6 +102,8 @@
     }));
   } else {
     startWorker(new Worker("/worker.js", { type: "module" }), {});
+    // an app on the home screen: the client kept on the device by a service worker
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
 
   // --- the API, answered by the worker ------------------------------------
@@ -112,7 +117,8 @@
     if (url.pathname === "/api/state" && r.status === 200) {
       try {
         const st = JSON.parse(body);
-        st.vault = "kept in this browser tab only - save it with the bar at the top";
+        st.vault = kept ? "kept on this device, encrypted with your passphrase" :
+          "kept in this browser tab only - save it with the bar at the top";
         body = JSON.stringify(st);
       } catch { /* leave it */ }
     }
@@ -168,7 +174,84 @@
     vaultDirty = false; updateBar();
   }
 
-  window.addEventListener("beforeunload", (e) => { if (vaultDirty) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", (e) => { if (vaultDirty && !kept) { e.preventDefault(); e.returnValue = ""; } });
+
+  // --- the vault kept on this device (UN-RFC 0043 6.2: only when turned on) --
+  // The stored file is the same encrypted vault as on a stick: without the
+  // passphrase it is useless, but anyone with this device can try passphrases.
+  let kept = false, keepTimer = null;
+  const idb = () => new Promise((resolve, reject) => {
+    const r = indexedDB.open("unseenet", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("vault");
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+  async function idbDo(mode, fn) {
+    const db = await idb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("vault", mode);
+      const req = fn(tx.objectStore("vault"));
+      tx.oncomplete = () => { resolve(req && req.result); db.close(); };
+      tx.onerror = () => { reject(tx.error); db.close(); };
+    });
+  }
+  async function storeVault() {
+    const r = await call({ type: "vault-out" });
+    if (!r.bytes) return false;
+    await idbDo("readwrite", (s) => s.put({ bytes: r.bytes, saved: Date.now() }, "vault"));
+    vaultDirty = false; updateBar();
+    return true;
+  }
+  function keepSoon() {
+    clearTimeout(keepTimer);
+    keepTimer = setTimeout(() => storeVault().catch(() => { vaultDirty = true; updateBar(); }), 800);
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && kept && keepTimer) { clearTimeout(keepTimer); storeVault().catch(() => {}); }
+  });
+  async function restoreVault() {
+    let rec = null;
+    try { rec = await idbDo("readonly", (s) => s.get("vault")); } catch { return; }
+    if (!rec || !rec.bytes) return;
+    kept = true;
+    const r = await call({ type: "vault-in", bytes: rec.bytes });
+    if (r.ok && typeof S !== "undefined" && typeof api === "function" && typeof render === "function") {
+      S.state = await api("GET", "/api/state"); S.error = null; render();
+    }
+    updateBar();
+  }
+  function keepDialog() {
+    const d = el("dialog", { class: "uw-dialog" });
+    const close = () => d.close();
+    if (!kept) {
+      d.append(el("h2", {}, "Keep your vault on this device?"),
+        el("p", {}, "Then Unseenet opens straight to your passphrase next time - also from the home screen - and every change is kept by itself."),
+        el("p", {}, "The vault stays encrypted with your passphrase, as on a stick. But anyone who gets hold of this device can try passphrases against it, and clearing the browser's data deletes it. Keep a copy as a file too, and choose a long passphrase."),
+        el("div", { class: "uw-row" },
+          el("button", { class: "uw-btn uw-dirty", on: { onclick: async () => {
+            try {
+              if (!(await storeVault())) { alert("Create or open a vault first."); return; }
+              kept = true; navigator.storage?.persist?.().catch(() => {});
+              updateBar(); close();
+            } catch (err) { alert("This browser would not keep it: " + err.message); }
+          } } }, "Keep it on this device"),
+          el("button", { class: "uw-btn", on: { onclick: close } }, "Not now")));
+    } else {
+      d.append(el("h2", {}, "Your vault is on this device"),
+        el("p", {}, "Encrypted with your passphrase. Changes are kept by themselves."),
+        el("div", { class: "uw-row" },
+          el("button", { class: "uw-btn", on: { onclick: () => { saveVault(); close(); } } }, "Save a copy as a file"),
+          el("button", { class: "uw-btn", on: { onclick: async () => {
+            if (!confirm("Delete the vault from this device? Without a copy as a file, this identity is gone.")) return;
+            await idbDo("readwrite", (s) => s.delete("vault")).catch(() => {});
+            kept = false; vaultDirty = true; updateBar(); close();
+          } } }, "Forget it on this device"),
+          el("button", { class: "uw-btn", on: { onclick: close } }, "Close")));
+    }
+    document.body.append(d);
+    d.showModal();
+    d.addEventListener("close", () => d.remove());
+  }
 
   // --- the bar: always there (UN-RFC 0043 section 6.1) ----------------------
   const onion = location.hostname.endsWith(".onion");
@@ -186,8 +269,12 @@
         `Open web, through ${entrance.name} - it can see your IP address.`;
     }
     const unlocked = typeof S !== "undefined" && S.state && S.state.unlocked;
-    bar.querySelector(".uw-open").hidden = !!unlocked;
+    bar.querySelector(".uw-open").hidden = !!unlocked || kept;
+    const keep = bar.querySelector(".uw-keep");
+    keep.hidden = FILE ? true : !unlocked && !kept;
+    keep.textContent = kept ? "On this device ✓" : "Keep on this device";
     const save = bar.querySelector(".uw-save");
+    save.hidden = kept;
     save.classList.toggle("uw-dirty", vaultDirty);
     const narrow = window.matchMedia("(max-width: 760px)").matches;
     save.textContent = narrow ? (vaultDirty ? "Save vault •" : "Save vault") :
@@ -212,7 +299,8 @@
       el("p", {}, "This is Unseenet's graphical client, running in your browser. Your keys stay here: this page signs, checks signatures and pays the postage itself. The entrance only carries bytes to a node over Tor."),
       el("table", {}, el("tr", {}, el("th"), el("th", {}, "Real client"), el("th", {}, "This page")),
         ...rows.map(([a, b, c]) => el("tr", {}, el("td", {}, a), el("td", {}, b), el("td", { class: c.startsWith("Yes") || c.startsWith("Every") || c.startsWith("This") ? "uw-warn" : "" }, c)))),
-      el("p", {}, "Your vault lives only in this tab. Save it as a file to use it again, and keep the file like a password. If you need to hide that you use Unseenet, or who you are, use the real client from unseenet.org."),
+      el("p", {}, kept ? "Your vault is kept on this device, encrypted with your passphrase. Keep a copy as a file too." :
+        "Your vault lives only in this tab. Save it as a file to use it again, or keep it on this device. If you need to hide that you use Unseenet, or who you are, use the real client from unseenet.org."),
       el("p", {}, "If this entrance is ever blocked: ",
         el("a", { href: (FILE && entrance ? entrance.url : "/") + "unseenet-entrances.html", download: "unseenet-entrances.html" }, "save the list of entrances"),
         " - a small file that finds another one, from your own disk. Send it to friends too."),
@@ -232,6 +320,7 @@
         : el("a", { class: "uw-link", href: "/unseenet-entrances.html", download: "unseenet-entrances.html" }, "Other entrances"),
       el("span", { class: "uw-grow" }),
       el("button", { class: "uw-btn uw-open", on: { onclick: () => file.click() } }, "Open vault file"),
+      el("button", { class: "uw-btn uw-keep", on: { onclick: keepDialog } }, "Keep on this device"),
       el("button", { class: "uw-btn uw-save", on: { onclick: saveVault } }, "Save vault file"),
       file);
     boot = el("div", { class: "uw-boot" }, el("div", { class: "uw-boot-box" },
@@ -242,4 +331,5 @@
     updateBar(); updateBoot();
     setInterval(updateBar, 1500);
   });
+  restoreVault();          // a vault kept on this device opens straight to its passphrase
 })();

@@ -28,3 +28,6 @@ html.uw #root { flex: 1; min-height: 0; height: auto; }
   .uw-link { white-space: nowrap; }
   .uw-btn { padding: 5px 8px; white-space: nowrap; }
 }
+.uw-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.uw-dialog .uw-btn { color: #10302a; }
+.uw-dialog .uw-btn.uw-dirty { color: #fff; }

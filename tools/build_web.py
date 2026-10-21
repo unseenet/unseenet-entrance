@@ -131,7 +131,23 @@ def build_page(gui: Path) -> None:
     html = html.replace(anchor, anchor + '\n<link rel="stylesheet" href="/entrance.css">\n'
                         '<script src="/shim.js"></script>')
     html = html.replace("<title>Unseenet</title>", "<title>Unseenet on the web</title>")
+    # an app for the home screen (the manifest, and sw.js from build_sw)
+    html = html.replace("</head>", '<link rel="manifest" href="/app/manifest.webmanifest">\n'
+                        '<meta name="theme-color" content="#10302a">\n'
+                        '<link rel="apple-touch-icon" href="/app/apple-touch-icon.png">\n'
+                        '<meta name="apple-mobile-web-app-capable" content="yes">\n'
+                        '<meta name="apple-mobile-web-app-title" content="Unseenet">\n</head>')
     (WEB / "index.html").write_text(html)
+
+
+def build_sw() -> None:
+    """sw.js, with a version that changes whenever anything it keeps changes."""
+    h = hashlib.sha256()
+    for f in sorted(p for d in ("static", "pyodide", "py", "app") for p in (WEB / d).rglob("*") if p.is_file()):
+        h.update(f.name.encode() + f.read_bytes())
+    for n in ("index.html", "shim.js", "worker.js", "entrance.css"):
+        h.update((WEB / n).read_bytes())
+    (WEB / "sw.js").write_text((WEB / "sw.template.js").read_text().replace("__VERSION__", h.hexdigest()[:16]))
 
 
 # --- the jump page: one file, no imports (UN-RFC 0043 section 8.7) ------------
@@ -262,6 +278,7 @@ def main() -> None:
         build_page(gui)
         build_pyodide()
         build_bundle(core, gui)
+        build_sw()
     if args.file_from:
         build_file(args.file_from, args.list_owner, args.list_group)
     print("web client built in", WEB)
