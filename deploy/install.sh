@@ -10,9 +10,9 @@
 #                       address (6-day certificates, renewed automatically); if
 #                       that fails, plain HTTP on port 8043 and an explanation
 #   TLS=domain:NAME     a normal Let's Encrypt certificate for NAME (point NAME here first)
-#   TLS=both:NAME       one certificate for NAME and the public IP address, so the
-#                       entrance answers on both: the name to share, the address for
-#                       when the name is blocked (6-day certificates, as for the IP)
+#   TLS=both:NAME       one certificate for NAME and the public IP address; NAME then
+#                       sends visitors on to the address, so the app lives at one origin
+#                       that still works when the name is blocked (6-day certificates)
 #   TLS=none            plain HTTP on port 8043 (a LAN test, or your own proxy in front)
 # Ports 80 and 443 must be open to the internet for the first two. On a machine
 # whose own firewall rejects them (Oracle Cloud's images do), they are opened.
@@ -302,16 +302,20 @@ case "$TLS" in
   none)
     plain_http ;;
   domain:*)
+    sed -i '/^ENTRANCE_HOME=/d' "$ENVFILE"
     NAME="${TLS#domain:}"
     if get_certificate domain "$NAME"; then URL="https://$NAME/"; else
       echo "!! no certificate for $NAME: does it point here, and are ports 80 and 443 open?"; plain_http; fi ;;
   both:*)
     NAME="${TLS#both:}"
     IP=$(public_ip)
-    if [ -n "$IP" ] && get_certificate both "$IP" "$NAME"; then URL="https://$NAME/ and https://$IP/"; else
+    if [ -n "$IP" ] && get_certificate both "$IP" "$NAME"; then
+      setting ENTRANCE_HOME "https://$IP"; systemctl restart unseenet-entrance
+      URL="https://$NAME/ -> https://$IP/"; else
       echo "!! no certificate for $NAME and ${IP:-(unknown)}: does $NAME point here, and are ports 80 and 443 open?"
       plain_http; fi ;;
   auto|ip)
+    sed -i '/^ENTRANCE_HOME=/d' "$ENVFILE"
     IP=$(public_ip)
     if [ -n "$IP" ] && get_certificate ip "$IP"; then URL="https://$IP/"; else
       echo "!! no certificate for the public IP address ${IP:-(unknown)}."
