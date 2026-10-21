@@ -76,6 +76,7 @@ class Config:
     release_owner: str = ""                  # test only: the key that owns both (default: the project's)
     releases_dir: Path | None = None         # versions live here, web_dir is its "current" (7.3)
     auto_update: str = "web"                 # "web": the web client updates itself; "off"
+    home: str = ""                           # "https://<ip>/": other names send pages here (one origin)
     mirror: str = ""                         # "portable" or "all": mirror Unseenet's releases (mirror.py)
     mirror_dir: Path | None = None
     mirror_channels: tuple[str, ...] = ("stable", "dev")
@@ -107,6 +108,7 @@ class Config:
         if e("ENTRANCE_RELEASES_DIR"):
             c.releases_dir = Path(e("ENTRANCE_RELEASES_DIR"))
         c.auto_update = e("ENTRANCE_AUTO_UPDATE", c.auto_update)
+        c.home = e("ENTRANCE_HOME", c.home).strip().rstrip("/")
         c.mirror = e("ENTRANCE_MIRROR", c.mirror).strip().lower()
         if c.mirror in ("off", "no", "0"):
             c.mirror = ""
@@ -273,6 +275,21 @@ WORKER_CSP = ("default-src 'self'; connect-src 'self' https: http: ws: wss:; "
 
 
 @web.middleware
+async def home(request: web.Request, handler):
+    """With ENTRANCE_HOME, a name for the entrance only points to its one address: the
+    app, its storage and the vault kept on the device belong to an origin, and the
+    address is the one that keeps working when the name is blocked. The tunnel and
+    what the entrance says about itself answer on every name."""
+    target = request.app["cfg"].home
+    if target and request.method == "GET" and not request.path.startswith(("/onntp", "/.well-known/")):
+        host = request.host.rsplit(":", 1)[0].strip("[]").lower()
+        own = target.split("://", 1)[-1].split("/", 1)[0].strip("[]").lower()
+        if host != own and not host.endswith(".onion") and host not in ("127.0.0.1", "localhost", "::1"):
+            raise web.HTTPFound(target + request.path_qs)
+    return await handler(request)
+
+
+@web.middleware
 async def headers(request: web.Request, handler):
     resp = await handler(request)
     if not isinstance(resp, web.WebSocketResponse):
@@ -361,7 +378,7 @@ async def static(request: web.Request) -> web.StreamResponse:
 
 
 def make_app(cfg: Config) -> web.Application:
-    app = web.Application(middlewares=[headers])
+    app = web.Application(middlewares=[headers, home])
     app["cfg"] = cfg
     app["limits"] = Limits(cfg.max_per_visitor, cfg.max_total)
     app["allowed"] = cfg.allowed_nodes()
