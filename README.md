@@ -2,71 +2,79 @@
 
 <h1 align="center">unseenet-entrance</h1>
 
-<p align="center"><b>A web entrance to <a href="https://unseenet.org">Unseenet</a>: the graphical client in an ordinary browser.</b></p>
+<p align="center"><b>A web entrance to <a href="https://unseenet.org">Unseenet</a>: the graphical client in an ordinary browser, on a phone or a computer, with nothing to install.</b></p>
 
 > **Pre-alpha.** Neither this nor the Unseenet core has had a security
-> review. It is the less hidden way in, on purpose - see below.
+> review. It is the less hidden way in, on purpose - see
+> [What you give up](#what-you-give-up).
 
-A **web entrance** ([UN-RFC 0043](https://unseenet.org/spec/un-rfc-0043/)) lets
-someone use Unseenet without installing anything. It has two parts:
+Unseenet is a discussion network over Tor: groups and nodes that nobody can
+remove, and posts that nobody but their author can delete or change. Its
+own clients start Tor themselves. A **web entrance**
+([UN-RFC 0043](https://unseenet.org/spec/un-rfc-0043/)) is for everyone who
+will not install anything: open its address in a browser, and you have the
+same client, with your keys in your own browser.
 
-- **The entrance** (`src/unseenet_entrance`) - a dumb tunnel. For each browser
-  WebSocket it opens one connection over Tor to a node's onion service, on a
-  Tor circuit of its own, and copies bytes both ways, unchanged. It only
-  connects to known nodes, adds nothing, caches nothing and logs nothing.
+This repository is two things:
+
+- **The entrance** - a small server anyone can run on a free cloud VM. It
+  serves the web client, and carries the client's connections to the nodes
+  over Tor. It cannot read, change or forge anything: it only moves bytes.
 - **The web client** - not a third client, but
-  [unseenet-gui](https://github.com/unseenet/unseenet-gui) itself. Its page is
-  served unchanged, and its backend - the real
-  [unseenet](https://github.com/unseenet/unseenet) core and the GUI's own
-  server code - runs in the browser, in WebAssembly
-  ([Pyodide](https://pyodide.org)) inside a Web Worker. So your vault, your
-  keys, signing, signature checks and postage all stay in your browser, and
-  every fix to the core or the GUI reaches the web too.
+  [unseenet-gui](https://github.com/unseenet/unseenet-gui) itself, with its
+  backend (the real [unseenet](https://github.com/unseenet/unseenet) core)
+  running in the browser. Every fix to the core or the GUI reaches the web too.
 
-```
-browser ─ page (unseenet-gui, unchanged) ─ shim.js ─ worker: Python + unseenet core + GUI backend
-                                                         │ WebSocket
-                                                     entrance ── Tor ── node (.onion)
-```
+## Using it
 
-## When an entrance is blocked
+Open an entrance's address, for example the project's own,
+**https://129.151.209.26/** (its certificate is for the IP address; there is
+no domain on purpose). Create a vault - a name and a passphrase - or open one
+you have. A bar at the top always says that you are on the open web.
 
-Every entrance serves the project's signed list of entrances, fetched from the
-network over Tor (`/.well-known/unseenet-entrances.json`), and the **jump
-page** `/unseenet-entrances.html` - one small file with that list inside. Keep
-it, or send it to someone: opened from disk it checks the list's signatures
-against the project key, shows which entrances answer, opens a random one
-that does, and can fetch a newer list and save itself again. The web client
-links to it ("Other entrances"). See UN-RFC 0043 section 8.
+- **Keep your vault.** Your keys live in the vault, encrypted with your
+  passphrase. Either **Save vault file** after a session and open it next
+  time, or choose **Keep on this device**: then the browser keeps it, still
+  encrypted, and saves every change by itself.
+- **Add it to the home screen** (Share → *Add to Home Screen* on an iPhone,
+  ⋮ → *Install app* or *Add to home screen* on Android, the install icon in
+  the address bar on a computer). It then starts like an app, from the
+  device, and finds your vault at once.
+- **When the entrance is gone.** The app keeps working: it talks through
+  another entrance from the signed list. **Other entrances** in the bar saves
+  the jump page, a small file that finds one that answers - keep it, send it
+  to a friend. See [When an entrance is blocked](#when-an-entrance-is-blocked).
+- **New versions** are offered in the bar (*New version*), and installed only
+  when you say so, after every file has been checked against the project's
+  signature. See [New versions](#new-versions).
+- **In Tor Browser**, use the entrance's onion address: then the entrance
+  does not see your IP address either.
 
-### The client in a file
+On a phone the client shows one thing at a time: your groups, a group, a
+post. The **⋯** button holds the rest.
 
-`python3 tools/build_web.py --file-from https://an.entrance/` also builds
-`web/unseenet-web.html`: the whole web client - the GUI page, Python, the core
-and the signed list of entrances - in one file of about 19 MB. Opened from
-disk it checks the list, picks an entrance that answers and uses it only as a
-tunnel; no page is served, so neither a blocked domain nor a changed page
-matters while the file itself is genuine. It runs in Chromium and Firefox.
+## What you give up
 
-(Browsers refuse module workers from blobs made by a file on disk, so the
-worker starts from a `data:` URL and Pyodide gets its files through a `fetch`
-that the worker answers itself.)
+| | Unseenet's own client | Through an entrance |
+|---|---|---|
+| Groups and nodes can be removed | No | No |
+| Others can delete or change your posts | No | No |
+| Nodes learn your IP address | No | No |
+| The entrance learns your IP address | - | **Yes** (not in Tor Browser) |
+| You trust code that is served to you | Once, signed | Signed versions, kept on the device - but see below |
+| Easy to block | Hard | This entrance, yes |
 
-## What you get - and what you give up
-
-Groups and nodes still cannot be removed by anyone, and nobody can delete or
-change someone else's signed post. But **the entrance sees your IP address**,
-and you trust the code it serves on every visit. The page says so at all
-times. If you need to hide that you use Unseenet, or who you are, use the
-[real client](https://unseenet.org) instead.
-
-Your vault lives only in the browser tab: **Open vault file** and **Save vault
-file** in the bar at the top move it to and from a file.
+The app keeps itself on the device and runs only versions whose every file
+matches a signed post. But the browser fetches the app's service worker
+itself, from the entrance, and whoever controls the entrance could change it;
+the app warns when it is not a signed one. If you need to hide that you use
+Unseenet, or who you are, use the [real client](https://unseenet.org).
 
 ## Run an entrance
 
-On Debian 12/13 or Ubuntu 24.04+ (a free cloud VM is enough), with ports 80
-and 443 open to the internet:
+The network gets freer with every entrance that someone else runs. On
+Debian 12/13 or Ubuntu 24.04+ - a free cloud VM is enough - with ports 80 and
+443 open to the internet:
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/unseenet/unseenet-entrance/main/deploy/install.sh
@@ -74,44 +82,110 @@ sudo sh install.sh
 ```
 
 That installs Tor, gives the entrance an onion address, installs the newest
-signed version of the web client, and gets a Let's Encrypt certificate for the machine's **public IP
-address** - no domain needed; the 6-day certificates renew by themselves.
-`TLS=domain:entrance.example.org` uses a name instead, `TLS=none` plain HTTP
-on port 8043 (a LAN test). See [docs/certificates.md](docs/certificates.md).
-Never put it behind a CDN that ends TLS on someone else's machine
-(UN-RFC 0043 section 5).
+signed version of the web client through the network, gets a Let's Encrypt
+certificate for the machine's **public IP address** (no domain needed; the
+6-day certificates renew by themselves), and runs it as its own user with
+the journal in memory only. At the end it prints both addresses. Choices,
+given before `sh`:
+
+| Setting | |
+|---|---|
+| `TLS=auto` (default) | A certificate for the public IP address; plain HTTP on port 8043 if that fails, with the reason |
+| `TLS=domain:NAME` | A normal certificate for NAME (point it here first) |
+| `TLS=none` | Plain HTTP on port 8043: a LAN test, or your own proxy in front |
+| `MIRROR=portable` or `all` | Also mirror Unseenet's releases - see [A mirror](#a-mirror-of-the-releases) |
+| `BUILD=local` | Build the web client here instead of installing the signed one (it says it is not signed) |
+| `JOURNAL=keep` | Leave the system journal as it is, on a machine that does other things too |
+
+Run the same command again to update the entrance's own code; settings in
+`/etc/unseenet-entrance.env` are kept. Its other settings:
+
+| In `/etc/unseenet-entrance.env` | |
+|---|---|
+| `ENTRANCE_OPERATOR`, `ENTRANCE_CONTACT` | Who runs it, shown in `/.well-known/unseenet-entrance` |
+| `ENTRANCE_AUTO_UPDATE=off` | Stop the web client from updating itself |
+| `ENTRANCE_NODES=any` | Tunnel to any onion node, not only the known ones |
+| `ENTRANCE_MAX_PER_VISITOR`, `ENTRANCE_MAX_TOTAL` | Open tunnels per visitor (6) and in all (300) |
+| `ENTRANCE_TRUST_FORWARDED=1` | A reverse proxy on this machine sits in front |
+
+Then `systemctl restart unseenet-entrance`. Never put it behind a CDN that
+ends TLS on someone else's machine (UN-RFC 0043 section 5). Certificates:
+[docs/certificates.md](docs/certificates.md). To have your entrance in the
+signed list that apps and the jump page use, open an issue here.
+
+### What an entrance does, and does not
+
+- It tunnels a browser's WebSocket to a **known node's** onion service, each
+  on a Tor circuit of its own, and copies bytes both ways, unchanged.
+- It serves the web client, and the signed lists it reads from the network
+  about once an hour: the entrances (`/.well-known/unseenet-entrances.json`)
+  and the versions of the web client (`/.well-known/unseenet-releases.json`),
+  as raw signed articles that clients check themselves.
+- It writes nothing about visitors anywhere: no access log, no error that
+  names an address. Limits are counted in memory, under a key made at start.
+
+## When an entrance is blocked
+
+Every entrance serves the **jump page**, `/unseenet-entrances.html`: one small
+file with the signed list of entrances inside. Opened from disk it checks the
+list against the project key, shows which entrances answer, opens a random
+one that does, and can fetch a newer list and save itself again. An installed
+app does the same by itself: when its entrance does not answer, it talks
+through another one from the list (UN-RFC 0043 section 8).
+
+**The client in a file.** `python3 tools/build_web.py --file-from
+https://an.entrance/` builds `web/unseenet-web.html`: the whole web client and
+the signed list in one file of about 19 MB. Opened from disk it picks an
+entrance that answers and uses it only as a tunnel; no page is served, so a
+blocked address or a changed page does not matter. Chromium and Firefox.
 
 ## New versions
 
-Every entrance serves the same build of the web client, made by
-[this repository's CI](.github/workflows/web.yml) and posted in the project
-channel `unseenet.releases` with the SHA-256 of every file (UN-RFC 0043
-sections 7.2-7.3):
+Every entrance serves the same build of the web client, built by
+[this repository's CI](.github/workflows/web.yml) - every day, and when
+something changed - and posted in the project channel `unseenet.releases`
+with the SHA-256 of every file (UN-RFC 0043 sections 7.2-7.3):
 
-- **The app** on a phone or computer shows *New version* when there is one,
-  and updates only when you say so. It takes the files from any entrance that
-  has that version and uses them only when every one matches the signed post.
-  It never goes back to an older version, and warns if the entrance serves a
-  service worker that is in no signed version.
-- **The entrance** updates the web client it serves by itself, the same way:
-  from the release here, or file by file from other entrances. Its own code
-  is never updated by itself: run `install.sh` again for that.
-  `ENTRANCE_AUTO_UPDATE=off` in `/etc/unseenet-entrance.env` stops it.
+- **The app** shows *New version* and updates only when you say so. It takes
+  the files from any entrance that has that version and uses them only when
+  every one matches the signed post. It never goes back to an older version.
+- **The entrance** updates the web client it serves by itself, the same way -
+  from the release here, or file by file from other entrances - without a
+  restart. Its own code is never updated by itself.
 
 Neither needs GitHub: the posts are read through the network, and the files
-can come from any entrance.
+can come from any entrance. The releases are also here, as `web-<version>`,
+with the list of checksums to compare by hand.
 
 ## A mirror of the releases
 
-An entrance can also mirror Unseenet's own releases, so that clients can update
-over Tor when GitHub is blocked: `MIRROR=portable sh install.sh` (the portable
-zips and the USB zip, about 300 MB per channel) or `MIRROR=all` (also a stick's
-update and image, about 1.1 GB). It follows `unseenet.releases`, fetches each
-new version from GitHub or another mirror, checks every file against the
-signed checksums, keeps only the newest, and serves it at `/mirror/<channel>/`
-on its onion address and its open address. Clients find it in the signed list
-of entrances and use nothing that does not match the signature. A build of your own (`BUILD=local sh install.sh`)
-runs, but the app says it is not signed.
+An entrance can also mirror Unseenet's own releases, so that the portable
+clients and sticks can update over Tor when GitHub is blocked:
+`MIRROR=portable` (the portable zips and the USB zip, about 300 MB per
+channel) or `MIRROR=all` (also a stick's update and image, about 1.1 GB).
+It follows `unseenet.releases`, fetches each new version from GitHub or
+another mirror, checks every file against the signed checksums, keeps only
+the newest, and serves it at `/mirror/<channel>/` on its onion address and
+its open address. Clients find it in the signed list of entrances and use
+nothing that does not match the signature, so a mirror needs no trust.
+`MIRROR=off` removes it.
+
+## How it works
+
+```
+browser ─ page (unseenet-gui, unchanged) ─ shim.js ─ worker: Python + unseenet core + GUI backend
+                                                         │ WebSocket
+                                                     entrance ── Tor ── node (.onion)
+```
+
+`tools/build_web.py` puts unseenet-gui's page, a pinned Pyodide
+(sha256-checked) and a zip of the Python code into `web/`; at run time nothing
+is loaded from anywhere else. The GUI's backend runs in
+[Pyodide](https://pyodide.org) in a Web Worker; `web/shim.js` answers the
+page's `/api/` calls from that worker. `web/py/webbackend.py` is the only
+glue: the network goes through the entrance instead of Tor, work the core
+gives a thread runs inline, and the vault is a file in memory. `web/sw.js`
+keeps the client on the device and serves only what the page has checked.
 
 ## Develop
 
@@ -122,17 +196,22 @@ ENTRANCE_SOCKS=127.0.0.1:9050 .venv/bin/unseenet-entrance               # needs 
 # open http://127.0.0.1:8043/
 ```
 
-A lab with two entrances and signed test versions, without the network:
-`tests/lab_updates.py` (see its docstring).
+`tests/lab_updates.py` runs two entrances on this machine with a test key and
+signed test versions, without the network (see its docstring);
+`python -m pytest tests` the Python tests.
 
-`tools/build_web.py` puts unseenet-gui's page, a pinned Pyodide (sha256-checked)
-and a zip of the Python code into `web/`; at run time nothing is loaded from
-anywhere else. `web/py/webbackend.py` is the only glue: the network goes
-through the entrance instead of Tor, work the core gives a thread runs inline,
-and the vault is a file in memory.
-
-`js/` holds a small JavaScript implementation of articles and ONNTP, used by
-the tests and for a future verifier (UN-RFC 0043 section 7.4).
+```
+src/unseenet_entrance/
+  server.py        the entrance: tunnel, static files, the lists, headers
+  listfetch.py     the signed lists, read from the nodes over Tor
+  release.py       the web client updating itself; installing a signed version
+  mirror.py        mirroring Unseenet's releases
+web/               shim.js, sw.js, worker.js, py/ - and the build's output
+js/                articles, signed lists and versions checked in JavaScript
+jump/              the jump page
+tools/             build_web.py, post_release.py (CI)
+deploy/install.sh  the installer
+```
 
 ## License
 
