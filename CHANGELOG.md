@@ -23,6 +23,11 @@ in `unseenet.releases`); this file is about the entrance that serves it.
   in the vault. Needs unseenet 0.4.2 (`Session._prove_segment`); with an
   older core, the web client doesn't ripen, as before (#27).
 
+### Changed
+
+- The web client is built from unseenet 0.4.2, so it ripens keys, and a
+  new user reads at once while the key ripens.
+
 ## [0.1.0] - 2026-10-22
 
 The first release of the web entrance (UN-RFC 0043). Works with unseenet 0.4
