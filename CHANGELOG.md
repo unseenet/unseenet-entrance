@@ -38,6 +38,10 @@ nodes (unseenet-gui#31).
 - **A mirror of Unseenet's releases** for those who cannot reach GitHub.
 - `ENTRANCE_HOME`: a name that sends visitors on to the entrance's address.
 - `tools/loadtest`: how many web clients an entrance carries.
+- `ENTRANCE_MAX_TOTAL=auto`, the default: as many tunnels as the machine's
+  available memory and open-file limit allow, printed at start, and
+  `LimitNOFILE=65536` in the unit `install.sh` writes; it was 300 tunnels
+  (150 visitors) and 1024 open files whatever the machine (#20).
 
 ### Changed
 

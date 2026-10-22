@@ -107,7 +107,7 @@ Run the same command again to update the entrance's own code; settings in
 | `ENTRANCE_OPERATOR`, `ENTRANCE_CONTACT` | Who runs it, shown in `/.well-known/unseenet-entrance` |
 | `ENTRANCE_AUTO_UPDATE=off` | Stop the web client from updating itself |
 | `ENTRANCE_NODES=any` | Tunnel to any onion node, not only the known ones |
-| `ENTRANCE_MAX_PER_VISITOR`, `ENTRANCE_MAX_TOTAL` | Open tunnels per visitor (6) and in all (300) |
+| `ENTRANCE_MAX_PER_VISITOR`, `ENTRANCE_MAX_TOTAL` | Open tunnels per visitor (6) and in all (`auto`: what the available memory and the open-file limit allow, about 120 KB and two open files per tunnel; printed at start; a number overrides it) |
 | `ENTRANCE_TRUST_FORWARDED=1` | A reverse proxy on this machine sits in front |
 
 Then `systemctl restart unseenet-entrance`. Never put it behind a CDN that

@@ -184,6 +184,8 @@ EnvironmentFile=$ENVFILE
 ExecStart=$APP/.venv/bin/python -m unseenet_entrance
 Restart=always
 RestartSec=3
+# two open files per tunnel: the default 1024 would stop it at ~500 tunnels (#20)
+LimitNOFILE=65536
 # ports 80 and 443 without running as root
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
