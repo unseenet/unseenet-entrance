@@ -9,6 +9,14 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+### Added
+
+- `tools/chiavdf`: chiavdf for Pyodide, so the web client can ripen its own
+  keys (UN-RFC 0025). The wheel is built with GMP's limbs made 64-bit for
+  wasm32, and checked in Pyodide against native chiavdf's proofs and the
+  core's ripening self-check. The `chiavdf` workflow builds it and can
+  release it (#27).
+
 ## [0.1.0] - 2026-10-22
 
 The first release of the web entrance (UN-RFC 0043). Works with unseenet 0.4

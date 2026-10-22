@@ -12,3 +12,5 @@ web/unseenet-web.html
 web/version.json
 web/release.sums
 web/lib.js
+tools/chiavdf/.build/
+dist/
