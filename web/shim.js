@@ -1,7 +1,7 @@
 // Unseenet on the web: the graphical client (unseenet-gui) unchanged, with its
 // backend in a Web Worker instead of on 127.0.0.1 (UN-RFC 0043 section 6).
 // This script runs before the client's app.js and
-//  - answers its fetch("/api/...") and WebSocket("/api/events") from the worker,
+//  - answers its fetch("/api/...", "/x/gui/...") and WebSocket("/api/events") from the worker,
 //  - shows, always, that this is the open web (section 6.1),
 //  - opens and saves the vault as a file (section 6.2), or - when the person
 //    turns it on - keeps it on this device, still encrypted with their passphrase;
@@ -319,11 +319,13 @@
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url, location.href);
-    if (url.origin !== location.origin || !url.pathname.startsWith("/api/")) return realFetch(input, init);
+    // the core's API (UN-RFC 0046) and unseenet-gui's own routes under /x/gui/ (section 6)
+    const ours = url.pathname.startsWith("/api/") || url.pathname.startsWith("/x/");
+    if (url.origin !== location.origin || !ours) return realFetch(input, init);
     const r = await call({ type: "api", method: (init.method || "GET").toUpperCase(),
       path: url.pathname + url.search, body: init.body ?? null });
     let body = r.body;
-    if (url.pathname === "/api/state" && r.status === 200) {
+    if (url.pathname === "/x/gui/state" && r.status === 200) {      // where the vault is
       try {
         const st = JSON.parse(body);
         st.vault = kept ? "kept on this device, encrypted with your passphrase" :
@@ -360,6 +362,12 @@
   // the client wants a token in the address; the worker adds the real one itself
   if (!/[#&]t=/.test(location.hash)) history.replaceState(null, "", location.pathname + "#t=web");
 
+  // the page's own state loader (unseenet-gui: the core's state with /x/gui/state)
+  async function refreshState() {
+    if (typeof loadState === "function") await loadState();
+    else S.state = await api("GET", "/api/state");
+  }
+
   // --- the vault as a file -------------------------------------------------
   async function openVault(file) {
     const bytes = await file.arrayBuffer();
@@ -367,7 +375,7 @@
     if (!r.ok) { alert(r.error || "Could not open that file"); return; }
     vaultDirty = false;
     if (typeof S !== "undefined" && typeof api === "function" && typeof render === "function") {
-      S.state = await api("GET", "/api/state"); S.error = null; render();
+      await refreshState(); S.error = null; render();
     }
     updateBar();
   }
@@ -425,7 +433,7 @@
     kept = true;
     const r = await call({ type: "vault-in", bytes: rec.bytes });
     if (r.ok && typeof S !== "undefined" && typeof api === "function" && typeof render === "function") {
-      S.state = await api("GET", "/api/state"); S.error = null; render();
+      await refreshState(); S.error = null; render();
     }
     updateBar();
   }

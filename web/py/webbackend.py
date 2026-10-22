@@ -1,7 +1,7 @@
 """The graphical client's backend, running in the browser (UN-RFC 0043 section 6).
 
-The real unseenet core and unseenet-gui's own Runtime and aiohttp handlers run
-in Pyodide inside a Web Worker. Only three things differ from the portable
+The real unseenet core with its local client API (UN-RFC 0046) and unseenet-gui's
+own routes run in Pyodide inside a Web Worker. Only three things differ from the portable
 client:
 
 - the network: no Tor here; each connection is a WebSocket to the web entrance,
@@ -82,12 +82,10 @@ def start(entrance_url: str, post_message) -> str:
     _patch_threads()
     _patch_network(entrance_url)
     _patch_vault()
-    from unseenet_gui.runtime import Runtime
-    from unseenet_gui.server import make_app
+    from unseenet_gui.server import build
 
     VAULT.parent.mkdir(parents=True, exist_ok=True)
-    _runtime = Runtime(VAULT)
-    _app = make_app(_runtime, _token)
+    _app, _runtime = build(VAULT, _token, page=False)      # the page comes from the shim
     _app.freeze()
     asyncio.get_event_loop().create_task(_pump_events())
     return _token
@@ -98,7 +96,7 @@ def switch_entrance(entrance_url: str) -> None:
     import webtransport
     webtransport.switch(entrance_url)
     if _runtime is not None and _runtime.session is not None:
-        _runtime.spawn(_runtime.refresh())
+        _runtime.refresh()
 
 
 async def _pump_events() -> None:
