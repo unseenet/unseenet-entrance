@@ -8,6 +8,12 @@ SHA-256 of every file (UN-RFC 0043 section 7.2). The key is the GitHub poster,
 which the project key lists as a poster in the channel; apps and entrances
 check every file against this post before they use it. Posted to every known
 node that answers.
+
+Key ripening (UN-RFC 0025): the posting goes through Session, so the header
+and postage are the core's. CI never ripens: the key is ripened and its chain
+published once, anywhere (``unseenet ripen --key-file ... --to 0 --publish``),
+and the session takes that chain over from the key's ripe@ group. Without
+one, this stops at once and says so.
 """
 from __future__ import annotations
 
@@ -25,7 +31,6 @@ from unseenet.core.poster import Poster  # noqa: E402
 from unseenet_entrance.listfetch import RELEASES_GROUP  # noqa: E402
 from unseenet_entrance.release import parse_release  # noqa: E402
 
-GROUP_MIN_POW = 20
 
 
 async def post(text: str, key: crypto.Identity, dry_run: bool) -> int:
@@ -35,11 +40,14 @@ async def post(text: str, key: crypto.Identity, dry_run: bool) -> int:
                     log=lambda msg: print("  " + msg, flush=True))
     art = poster.build(RELEASES_GROUP, f"Web client {rel.version}", text)
     print(f"Posting web client {rel.version} ({len(rel.files)} files) as {key.key_text}", flush=True)
-    if dry_run:
-        print(art.finalize(key, 8).to_bytes().decode())
+    if dry_run:                                   # the text as signed; postage is the nodes'
+        print(art.finalize(key, 0).to_bytes().decode())
         return 1
     async with poster:
-        result = await poster.post_article(art, GROUP_MIN_POW)
+        if await poster.ripening_level() is None:
+            sys.exit(f"{key.key_text} has no published ripening chain (UN-RFC 0025): ripen it "
+                     "once outside CI - unseenet ripen --key-file KEY --to 0 --node NODE --publish")
+        result = await poster.post_article(art)
     return len(result.accepted)
 
 
