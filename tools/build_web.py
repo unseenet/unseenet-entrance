@@ -48,6 +48,19 @@ PYODIDE_CORE = ["pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_st
                 "pyodide-lock.json"]
 PYODIDE_PACKAGES = ["pynacl", "aiohttp"]          # with their dependencies, from the lock file
 
+# chiavdf for Pyodide, for key ripening (UN-RFC 0025): made by tools/chiavdf and
+# the chiavdf workflow, released here. Added to Pyodide's lock file, so the
+# worker loads it like Pyodide's own packages (#27).
+CHIAVDF = {
+    "name": "chiavdf", "version": "1.2.0",
+    "file_name": "chiavdf-1.2.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
+    "sha256": "b44d6530f171b585160e41f6ed8d7be0beb8646da44a4985e6ea4065d008aca9",
+    "depends": [], "imports": ["chiavdf"], "install_dir": "site", "package_type": "package",
+    "tool": {}, "unvendored_tests": False,
+}
+CHIAVDF_URL = ("https://github.com/unseenet/unseenet-entrance/releases/download/"
+               f"chiavdf-{CHIAVDF['version']}-pyodide-{PYODIDE_VERSION}/")
+
 # Pure-Python dependencies of the core that Pyodide does not ship: (url, sha256, top-level dirs)
 WHEELS = [
     ("https://files.pythonhosted.org/packages/3b/23/2c2cef1b4313c55d1713201acd4ee2043fb2cf22e546ca9d36bf4317faea/python_socks-3.1.1-py3-none-any.whl",
@@ -103,7 +116,12 @@ def build_pyodide() -> None:
         info = pkgs[name]
         (out / info["file_name"]).write_bytes(fetch(PYODIDE_URL + info["file_name"], info["sha256"]))
         todo.extend(info.get("depends", []))
-    print(f"pyodide {PYODIDE_VERSION}: {len(seen)} packages ({', '.join(sorted(seen))})")
+    name = CHIAVDF["file_name"]
+    (out / name).write_bytes(fetch(CHIAVDF_URL + name, CHIAVDF["sha256"]))
+    pkgs["chiavdf"] = CHIAVDF
+    (out / "pyodide-lock.json").write_text(json.dumps(lock, sort_keys=True))
+    print(f"pyodide {PYODIDE_VERSION}: {len(seen)} packages ({', '.join(sorted(seen))}), "
+          f"chiavdf {CHIAVDF['version']}")
 
 
 def build_bundle(core: Path, gui: Path) -> None:

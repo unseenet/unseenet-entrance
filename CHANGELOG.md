@@ -16,6 +16,12 @@ in `unseenet.releases`); this file is about the entrance that serves it.
   wasm32, and checked in Pyodide against native chiavdf's proofs and the
   core's ripening self-check. The `chiavdf` workflow builds it and can
   release it (#27).
+- **The web client ripens its keys** (UN-RFC 0025), so a new web user can
+  post on nodes that ask for ripening. Segments are proved in a ripening
+  worker of its own, with Pyodide and chiavdf, so the rest of the client
+  runs on meanwhile. Stopping is terminating that worker. Progress is kept
+  in the vault. Needs unseenet 0.4.2 (`Session._prove_segment`); with an
+  older core, the web client doesn't ripen, as before (#27).
 
 ## [0.1.0] - 2026-10-22
 
