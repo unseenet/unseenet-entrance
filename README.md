@@ -54,6 +54,15 @@ you have. A bar at the top always says that you are on the open web.
 On a phone the client shows one thing at a time: your groups, a group, a
 post. The **⋯** button holds the rest.
 
+**A new key ripens first.** Most nodes ask a key to have worked a while
+before it posts (key ripening, UN-RFC 0025). The client does that work in
+the browser, in the background, while the page is open. A brand-new key
+takes 10-15 minutes before its first post goes out, on a computer or a
+recent phone. After that the key keeps ripening while the page is open:
+each level makes postage cheaper. Closing the page loses at most the step in
+progress, because the key's progress is kept in your vault, and the same
+vault ripens on in Unseenet's own client.
+
 ## What you give up
 
 | | Unseenet's own client | Through an entrance |
@@ -211,7 +220,7 @@ src/unseenet_entrance/
 web/               shim.js, sw.js, worker.js, py/ - and the build's output
 js/                articles, signed lists and versions checked in JavaScript
 jump/              the jump page
-tools/             build_web.py, post_release.py (CI)
+tools/             build_web.py, post_release.py (CI), chiavdf/ (key ripening for Pyodide)
 deploy/install.sh  the installer
 ```
 

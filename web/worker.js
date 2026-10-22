@@ -8,6 +8,12 @@
 // Either way nothing is loaded from anywhere else.
 // The client in a file starts this from a data: URL (browsers refuse module
 // workers from blobs made by a file on disk); it replaces the two marked lines.
+//
+// The same file is also the ripening worker (init.role "ripen", #27): the
+// backend starts one to prove key-ripening segments (UN-RFC 0025), which take
+// minutes to hours. Pyodide has no threads, so a segment in the backend would
+// stop everything else; in a worker of its own it doesn't, and stopping it is
+// terminating that worker.
 import { loadPyodide as servedPyodide } from "./pyodide/pyodide.mjs";   // FILE
 const HERE = import.meta.url;                                           // FILE
 let loadPyodide = servedPyodide;
@@ -19,10 +25,10 @@ let wb = null;
 let started = null;
 const queue = [];
 
-async function start(init) {
-  status("Loading Python ...");
+let initMessage = null;               // kept to start the ripening worker the same way
+
+async function pyodide(init) {
   let opts;
-  let bundle;
   if (!init.files) {
     opts = { indexURL: new URL("./pyodide/", HERE).href };
   } else {
@@ -45,11 +51,17 @@ async function start(init) {
     const asm = await import(blob("pyodide.asm.mjs"));
     opts = { indexURL: base, packageBaseUrl: base, createPyodideModule: asm.default,
       lockFileContents: JSON.parse(new TextDecoder().decode(files["pyodide-lock.json"])) };
-    bundle = files["bundle.zip"];
   }
-  const py = await loadPyodide(opts);
+  return loadPyodide(opts);
+}
+
+async function start(init) {
+  status("Loading Python ...");
+  initMessage = init;
+  const py = await pyodide(init);
   status("Loading the Unseenet core ...");
-  await py.loadPackage(["pynacl", "aiohttp"], { messageCallback: () => {} });
+  await py.loadPackage(["pynacl", "aiohttp", "chiavdf"], { messageCallback: () => {} });
+  let bundle = init.files && init.files["bundle.zip"];
   if (!bundle) bundle = await (await fetch(new URL("./py/bundle.zip", HERE))).arrayBuffer();
   py.unpackArchive(bundle, "zip", { extractDir: "/app" });
   py.runPython(`import sys; sys.path.insert(0, "/app")`);
@@ -60,8 +72,95 @@ async function start(init) {
     u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
     ws = u.href;
   }
-  wb.start(ws, (s) => self.postMessage(s));
+  wb.start(ws, (s) => self.postMessage(s), ripening);
   post({ type: "ready" });
+}
+
+// --- key ripening in a worker of its own ---
+// webbackend calls ripening.prove(seed, x, bits, t) and ripening.stop();
+// prove gives the result's bytes, or null when stopped.
+let ripener = null;            // { worker, ready } while one runs
+let pending = null;            // { key, resolve, done } of the segment being proved
+
+function ripenerWorker() {
+  if (ripener) return ripener;
+  const worker = new Worker(HERE, { type: "module" });
+  const ready = new Promise((resolve, reject) => {
+    worker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === "ripen-ready") resolve();
+      else if (m.type === "ripen-fatal") reject(new Error(m.text));
+      else if (m.type === "proved" && pending) finish(m.bytes);
+    };
+    worker.onerror = (e) => {
+      reject(new Error(e.message || "the ripening worker stopped"));
+      ripening.stop();
+    };
+  });
+  const { files, ...rest } = initMessage;
+  // the client in a file: the ripening worker gets its own copy of Pyodide's files
+  worker.postMessage({ ...rest, type: "init", role: "ripen", files: files && { ...files, "bundle.zip": undefined } });
+  ripener = { worker, ready };
+  return ripener;
+}
+
+function finish(bytes) {
+  const p = pending;
+  pending = null;
+  p.resolve(bytes);
+}
+
+const hex = (a) => Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
+
+const ripening = {
+  // The core may ask for the same segment twice at once (posting waits for
+  // level 0 while the background ripens on): both get the one proof. Another
+  // segment waits for the one being proved.
+  async prove(seed, x, bits, t) {
+    const key = `${hex(seed)}/${hex(x)}/${bits}/${t}`;
+    while (pending && pending.key !== key) await pending.done;
+    if (pending) return pending.done;
+    let resolve;
+    const done = new Promise((r) => { resolve = r; });
+    pending = { key, resolve, done };
+    try {
+      const r = ripenerWorker();
+      await r.ready;
+      r.worker.postMessage({ type: "prove", seed, x, bits, t });
+    } catch (err) {
+      console.warn("key ripening is not available here:", err && err.message || err);
+      ripening.stop();
+    }
+    return done;
+  },
+  stop() {                     // the run file is gone, or the page stops ripening
+    if (ripener) ripener.worker.terminate();
+    ripener = null;
+    if (pending) finish(null);
+  },
+};
+
+async function startRipener(init) {
+  try {
+    const py = await pyodide(init);
+    await py.loadPackage(["chiavdf"], { messageCallback: () => {} });
+    // the arguments come as Uint8Arrays, chiavdf wants bytes
+    const prove = py.runPython(`
+import chiavdf
+from pyodide.ffi import to_js
+def prove(seed, x, bits, t):
+    return to_js(chiavdf.prove(seed.to_bytes(), x.to_bytes(), int(bits), int(t), ""))
+prove`);
+    self.onmessage = (e) => {
+      const m = e.data;
+      if (m.type !== "prove") return;
+      const bytes = prove(m.seed, m.x, m.bits, m.t);
+      self.postMessage({ type: "proved", bytes }, [bytes.buffer]);
+    };
+    self.postMessage({ type: "ripen-ready" });
+  } catch (err) {
+    self.postMessage({ type: "ripen-fatal", text: String(err && err.message || err) });
+  }
 }
 
 async function handle(m) {
@@ -90,6 +189,10 @@ async function handle(m) {
 
 self.onmessage = async (e) => {
   const m = e.data;
+  if (m.type === "init" && m.role === "ripen") {
+    startRipener(m);
+    return;
+  }
   if (m.type === "init") {
     started = start(m).then(async () => {
       for (const q of queue.splice(0)) await handle(q);    // asked for before we were ready

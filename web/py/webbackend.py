@@ -8,6 +8,8 @@ client:
   which carries the bytes to the node over Tor (``webtransport``);
 - threads: Pyodide has none, so work the core hands to a thread (key
   derivation, postage) runs inline - this is a worker, the page stays responsive;
+  key-ripening segments, which take minutes to hours, are proved in a worker of
+  their own instead (``_patch_ripening``, #27);
 - the vault lives in the worker's memory; the page opens and saves it as a file.
 
 Requests from the page are answered by the same aiohttp application the
@@ -49,6 +51,41 @@ def _patch_threads() -> None:
     asyncio.to_thread = to_thread
 
 
+def _patch_ripening(ripening_js) -> None:
+    """Prove key-ripening segments (UN-RFC 0025) in the ripening worker that
+    worker.js runs: ``ripening_js.prove(seed, x, bits, t)`` gives the result's
+    bytes, or null when ``ripening_js.stop()`` stopped it. The core asks for
+    this through ``Session._prove_segment`` (unseenet#323)."""
+    from unseenet.client import session
+    from unseenet.core import ripening as rp
+
+    if not hasattr(session.Session, "_prove_segment"):     # a core before 0.4.2
+        rp.available = lambda: False                           # no ripening, as before
+        return
+    from pyodide.ffi import to_js
+
+    async def stop_when_gone(run_file) -> None:
+        while Path(run_file).exists():
+            await asyncio.sleep(0.5)
+        ripening_js.stop()
+
+    async def prove_segment(self, public_key, start, t, run_file=None):
+        proving = ripening_js.prove(to_js(rp.seed(public_key)), to_js(bytes(start)),
+                                    rp.DISC_BITS, t)
+        watch = asyncio.ensure_future(stop_when_gone(run_file)) if run_file else None
+        try:
+            result = await proving
+        finally:
+            if watch:
+                watch.cancel()
+        if result is None:                     # stopped: started again later (section 3.2)
+            return None
+        data = result.to_bytes()
+        return rp.Segment(t, data[:rp.FORM_SIZE], data[rp.FORM_SIZE:])
+
+    session.Session._prove_segment = prove_segment
+
+
 def _patch_network(entrance_url: str) -> None:
     import webtransport
     from unseenet.client import session
@@ -75,11 +112,13 @@ def _patch_vault() -> None:
     vault.Vault.save = save
 
 
-def start(entrance_url: str, post_message) -> str:
+def start(entrance_url: str, post_message, ripening_js=None) -> str:
     """Build the GUI's app. Returns the token the page sends with each request."""
     global _app, _runtime, _post
     _post = post_message
     _patch_threads()
+    if ripening_js is not None:
+        _patch_ripening(ripening_js)
     _patch_network(entrance_url)
     _patch_vault()
     from unseenet_gui.server import build
