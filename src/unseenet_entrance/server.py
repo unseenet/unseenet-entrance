@@ -84,6 +84,8 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
+        """The configuration from ENTRANCE_* variables; ENTRANCE_MAX_TOTAL is "auto"
+        unless set: what the machine's memory and open-file limit allow (#20)."""
         c = cls()
         e = os.environ.get
         c.host = e("ENTRANCE_HOST", c.host)
@@ -96,7 +98,8 @@ class Config:
         c.nodes = e("ENTRANCE_NODES", c.nodes)
         c.extra_nodes = [a for a in e("ENTRANCE_EXTRA_NODES", "").split() if a]
         c.max_per_visitor = int(e("ENTRANCE_MAX_PER_VISITOR", c.max_per_visitor))
-        c.max_total = int(e("ENTRANCE_MAX_TOTAL", c.max_total))
+        total = e("ENTRANCE_MAX_TOTAL", "auto").strip().lower()
+        c.max_total = auto_max_total()[0] if total == "auto" else int(total)
         c.trust_forwarded = e("ENTRANCE_TRUST_FORWARDED", "") in ("1", "yes", "true")
         if e("ENTRANCE_TLS_CERT") and e("ENTRANCE_TLS_KEY"):
             c.tls_cert, c.tls_key = Path(e("ENTRANCE_TLS_CERT")), Path(e("ENTRANCE_TLS_KEY"))
@@ -474,7 +477,12 @@ async def serve(cfg: Config) -> None:
     scheme = "https" if ctx else "http"
     print(f"unseenet-entrance {__version__} on {scheme}://{cfg.host}:{cfg.port}/"
           + (f" (and http on {cfg.http_port})" if cfg.http_port else "")
-          + f", Tor SOCKS {cfg.socks_host}:{cfg.socks_port}, nodes: {cfg.nodes}", flush=True)
+          + f", Tor SOCKS {cfg.socks_host}:{cfg.socks_port}, nodes: {cfg.nodes}"
+          + f", at most {cfg.max_total} tunnels", flush=True)
+    _, bound = auto_max_total()
+    if bound == "open files" and os.environ.get("ENTRANCE_MAX_TOTAL", "auto") == "auto":
+        print(f"note: the open-file limit ({_open_files()}) allows fewer tunnels than the "
+              "memory would; raise it (LimitNOFILE=65536 in the systemd unit)", flush=True)
     try:
         if ctx:
             await reload_tls(ctx, cfg)
@@ -483,6 +491,47 @@ async def serve(cfg: Config) -> None:
     finally:
         for r in runners:
             await r.cleanup()
+
+
+TUNNEL_BYTES = 120 * 1024      # measured ~99 KB per tunnel with a 16 KiB TLS buffer, plus room
+RESERVED_BYTES = 100 << 20     # the entrance itself, Python and aiohttp
+FILES_PER_TUNNEL = 2           # the WebSocket and the SOCKS connection to Tor
+RESERVED_FILES = 64            # listening sockets, logs, the release files
+
+
+def _mem_available(path: str = "/proc/meminfo") -> int | None:
+    try:
+        for line in Path(path).read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _open_files() -> int | None:
+    try:
+        import resource
+        soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (ImportError, ValueError, OSError):
+        return None
+    return None if soft == resource.RLIM_INFINITY else soft
+
+
+def auto_max_total(mem: int | None = None, files: int | None = None) -> tuple[int, str]:
+    """How many tunnels this machine carries (#20, UN-RFC 0043 4.2): the smaller of
+    what its available memory and its open-file limit allow. Returns the number and
+    which of the two decided it ("memory", "open files", or "default" when neither
+    can be read)."""
+    mem = _mem_available() if mem is None else mem
+    files = _open_files() if files is None else files
+    by_mem = (mem - RESERVED_BYTES) // TUNNEL_BYTES if mem else None
+    by_files = (files - RESERVED_FILES) // FILES_PER_TUNNEL if files else None
+    if by_mem is None and by_files is None:
+        return Config.max_total, "default"
+    if by_files is not None and (by_mem is None or by_files < by_mem):
+        return max(10, by_files), "open files"
+    return max(10, by_mem), "memory"
 
 
 def main() -> None:

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,8 +8,21 @@ dynamic = ["version"]
 description = "A web entrance to Unseenet: lets a browser in over Tor (UN-RFC 0043)"
 readme = "README.md"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Andreas Lorensen" }]
 requires-python = ">=3.11"
-dependencies = ["aiohttp>=3.9", "python-socks[asyncio]>=2.4", "unseenet>=0.3"]
+dependencies = [
+    "aiohttp>=3.9",
+    "python-socks[asyncio]>=2.4",
+    "unseenet>=0.4.1,<0.5",   # one minor version of the core at a time
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.urls]
+Homepage = "https://github.com/unseenet/unseenet-entrance"
+Specification = "https://github.com/unseenet/unseenet/blob/main/rfc/un-rfc-0043.md"
 
 [project.scripts]
 unseenet-entrance = "unseenet_entrance.server:main"

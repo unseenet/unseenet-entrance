@@ -4,6 +4,8 @@
 #   sudo sh install.sh [source]
 #
 # source: a git URL or a local checkout (default: the GitHub repository).
+# REF=vX.Y.Z or REF=main picks what is cloned from a URL (default: the newest
+# release tag, so an entrance runs a release).
 #
 # HTTPS, chosen with TLS=... (default auto):
 #   TLS=auto            a Let's Encrypt certificate for this machine's public IP
@@ -61,7 +63,13 @@ apt-get install -y -q tor python3-venv git ca-certificates >/dev/null
 echo "== user and code"
 id unseenet-entrance >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin unseenet-entrance
 rm -rf "$APP.new"
-if [ -d "$SRC" ]; then cp -a "$SRC" "$APP.new"; else git clone -q --depth 1 "$SRC" "$APP.new"; fi
+if [ -d "$SRC" ]; then
+  cp -a "$SRC" "$APP.new"
+else
+  REF="${REF:-$(git ls-remote --tags --refs --sort=-v:refname "$SRC" 'v[0-9]*' | head -n 1 | sed 's#.*/##')}"
+  echo "   $SRC ${REF:-main}"
+  git clone -q --depth 1 ${REF:+--branch "$REF"} "$SRC" "$APP.new"
+fi
 rm -rf "$APP.new/.venv" "$APP.new/.git"
 python3 -m venv "$APP.new/.venv"
 "$APP.new/.venv/bin/pip" install -q --upgrade pip
@@ -176,6 +184,8 @@ EnvironmentFile=$ENVFILE
 ExecStart=$APP/.venv/bin/python -m unseenet_entrance
 Restart=always
 RestartSec=3
+# two open files per tunnel: the default 1024 would stop it at ~500 tunnels (#20)
+LimitNOFILE=65536
 # ports 80 and 443 without running as root
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE

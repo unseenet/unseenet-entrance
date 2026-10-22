@@ -1,12 +1,13 @@
 name: web
 # One build of the web client for every entrance (UN-RFC 0043 sections 7.2-7.3):
-# built from this repository, unseenet and unseenet-gui (main), released here as
+# built from this repository and releases of unseenet and unseenet-gui (CORE_REF,
+# GUI_REF below), released here as
 # web-<version> (a zip and the list of every file's SHA-256), and that list
 # posted in unseenet.releases over Tor. Entrances and installed apps update to
 # it, checking every file against the post.
 #
-# Runs on changes here, every day (to pick up changes in unseenet and
-# unseenet-gui) and by hand - and makes a new version only when a file changed.
+# Runs on changes here, every day and by hand, and makes a new version only
+# when a file changed.
 # The key is the GitHub poster (secret UNSEENET_ANNOUNCE_SEED, put here by
 # unseenet's tools/project/share_poster.py); the project key lists it as a
 # poster in unseenet.releases.
@@ -30,6 +31,12 @@ concurrency:
   group: web
   cancel-in-progress: false
 
+env:
+  # The releases the web client is built from: the core within the range
+  # pyproject.toml asks for, and the graphical client that runs on it.
+  CORE_REF: v0.4.1
+  GUI_REF: v0.1.0
+
 jobs:
   web:
     runs-on: ubuntu-latest
@@ -41,8 +48,8 @@ jobs:
           python-version: "3.13"
       - name: Sources
         run: |
-          git clone -q --depth 1 https://github.com/unseenet/unseenet.git core
-          git clone -q --depth 1 https://github.com/unseenet/unseenet-gui.git gui
+          git clone -q --depth 1 --branch "$CORE_REF" https://github.com/unseenet/unseenet.git core
+          git clone -q --depth 1 --branch "$GUI_REF" https://github.com/unseenet/unseenet-gui.git gui
           pip install -q ./core .
       - name: Build
         run: |
