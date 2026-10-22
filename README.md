@@ -215,6 +215,24 @@ tools/             build_web.py, post_release.py (CI)
 deploy/install.sh  the installer
 ```
 
+## Versions and releases
+
+The entrance follows [semantic versioning](https://semver.org/) on the same
+principles as [unseenet](https://github.com/unseenet/unseenet/blob/main/docs/development.md#versioning):
+tags `vX.Y.Z` on `main`, the changes in [CHANGELOG.md](CHANGELOG.md), and
+releases on [PyPI](https://pypi.org/p/unseenet-entrance). Each release names
+the minor version of unseenet it works with (`unseenet>=0.4.1,<0.5`), and the
+web client is built from the releases named in `.github/workflows/web.yml`
+(`CORE_REF`, `GUI_REF`). `install.sh` installs the newest release tag.
+
+The web client has versions of its own, `web-<version>`, made by `web.yml`
+whenever a file changes and posted in `unseenet.releases`.
+
+To release the entrance: move the entries under `## [Unreleased]` in
+`CHANGELOG.md` to a new `## [X.Y.Z] - YYYY-MM-DD` section, set `__version__`
+in `src/unseenet_entrance/__init__.py`, commit, then
+`git tag -a vX.Y.Z -m "unseenet-entrance X.Y.Z" && git push origin vX.Y.Z`.
+
 ## License
 
 Apache-2.0. `js/vendor/noble.js` bundles MIT-licensed code, see
