@@ -1,0 +1,77 @@
+name: chiavdf
+# chiavdf for Pyodide, so the web client ripens its own keys (UN-RFC 0025,
+# unseenet-entrance#27): builds the wheel with tools/chiavdf/build.sh and checks
+# it in Pyodide against proofs from native chiavdf (tools/chiavdf/vectors.json)
+# and the core's own self-check.
+#
+# Run by hand with "publish" to put the wheel in a release of its own,
+# chiavdf-<chiavdf version>-pyodide-<pyodide version>, for the web build to fetch.
+on:
+  push:
+    branches: [main]
+    paths: ["tools/chiavdf/**", ".github/workflows/chiavdf.yml"]
+  pull_request:
+    paths: ["tools/chiavdf/**", ".github/workflows/chiavdf.yml"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "publish the wheel as a release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  PYODIDE_BUILD: "0.39.2"
+  CORE_REF: v0.4.1
+
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write          # only used by "publish"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Versions
+        run: |
+          sed -n 's/^\(PYODIDE_VERSION\|CHIAVDF_VERSION\)=\([^ ]*\).*/\1=\2/p' tools/chiavdf/build.sh >> "$GITHUB_ENV"
+      - name: pyodide-build and emsdk
+        run: |
+          pip install -q "pyodide-build==$PYODIDE_BUILD"
+          pyodide xbuildenv install "$PYODIDE_VERSION"
+          EMV=$(pyodide config get emscripten_version)
+          git clone -q --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "$EMV" >/dev/null
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$EMV" >/dev/null
+      - name: Build
+        run: |
+          . "$RUNNER_TEMP/emsdk/emsdk_env.sh" >/dev/null 2>&1
+          sh tools/chiavdf/build.sh dist
+          echo "WHEEL=$(ls dist/chiavdf-*.whl)" >> "$GITHUB_ENV"
+      - name: Check it in Pyodide
+        run: |
+          git clone -q --depth 1 --branch "$CORE_REF" https://github.com/unseenet/unseenet.git core
+          npm install --no-save --silent "pyodide@$PYODIDE_VERSION"
+          node tools/chiavdf/test.mjs "$WHEEL" core/src
+          sha256sum "$WHEEL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chiavdf-pyodide
+          path: dist/*.whl
+      - name: Publish
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="chiavdf-$CHIAVDF_VERSION-pyodide-$PYODIDE_VERSION"
+          ( cd dist && sha256sum *.whl > SHA256SUMS.txt )
+          gh release create "$TAG" dist/*.whl dist/SHA256SUMS.txt --title "$TAG" \
+            --notes "chiavdf $CHIAVDF_VERSION for Pyodide $PYODIDE_VERSION, built by the chiavdf workflow (tools/chiavdf). Checked against native chiavdf's proofs and the core's ripening self-check."
