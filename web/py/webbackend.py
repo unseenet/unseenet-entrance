@@ -18,6 +18,7 @@ portable client serves on 127.0.0.1, so the two cannot drift apart.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import secrets
 from pathlib import Path
@@ -98,18 +99,66 @@ def _patch_network(entrance_url: str) -> None:
     session.Session._ensure_tor = no_tor
 
 
+def _summary(data: dict) -> tuple[str, dict]:
+    """The vault without its ripening chains, as a digest, and each key's level
+    (computed, published). Cheap: the offline cache is a sidecar, not in ``data``."""
+    from unseenet.core import ripening as rp
+
+    rest = {k: v for k, v in data.items() if k != "ripening"}
+    digest = hashlib.sha256(json.dumps(rest, sort_keys=True, default=str).encode()).hexdigest()
+    levels = {}
+    for key, entry in (data.get("ripening") or {}).items():
+        t = sum(int(s.get("t", 0)) for s in entry.get("segments", []))
+        lv, published = rp.level(t), rp.level(int(entry.get("published") or 0))
+        if lv is not None or published is not None:      # a chain below level 0 is no level yet
+            levels[key] = (lv, published)
+    return digest, levels
+
+
+def vault_change(data: dict, seen: dict) -> tuple[str, int | None]:
+    """What changed since ``seen`` (the vault as opened or last saved), and the
+    newest level: ``data`` (anything outside the ripening chains), ``level`` (a key
+    reached a new level, or published one) or ``ripening`` (only a chain grew, a
+    checkpoint minutes apart). The page offers to save on the first two (#32)."""
+    digest, levels = _summary(data)
+    if seen.get("digest") != digest:
+        kind = "data"
+    elif seen.get("levels") != levels:
+        kind = "level"
+    else:
+        kind = "ripening"
+    seen.update(digest=digest, levels=levels)
+    top = max((lv for lv, _ in levels.values() if lv is not None), default=None)
+    return kind, top
+
+
 def _patch_vault() -> None:
-    """Tell the page when the vault changed, so it can offer to save it."""
+    """Tell the page when the vault changed, and how, so it can offer to save it."""
     from unseenet.core import vault
 
-    original = vault.Vault.save
+    original_save = vault.Vault.save
+    original_open = vault.Vault.open.__func__
 
     def save(self):
-        original(self)
+        original_save(self)
         if _post:
-            _post(json.dumps({"type": "vault-changed"}))
+            seen = self.__dict__.setdefault("_web_seen", {})
+            try:
+                kind, level = vault_change(self.data, seen)
+            except Exception:  # noqa: BLE001  the page then offers to save, as before
+                kind, level = "data", None
+            _post(json.dumps({"type": "vault-changed", "kind": kind, "level": level}))
+
+    def open_(cls, *args, **kwargs):
+        v = original_open(cls, *args, **kwargs)
+        try:
+            v._web_seen = dict(zip(("digest", "levels"), _summary(v.data)))
+        except Exception:  # noqa: BLE001
+            v._web_seen = {}
+        return v
 
     vault.Vault.save = save
+    vault.Vault.open = classmethod(open_)
 
 
 def start(entrance_url: str, post_message, ripening_js=None) -> str:

@@ -19,6 +19,9 @@
   const pending = new Map();
   const sockets = new Set();
   let nextId = 1, booted = false, vaultDirty = false, bootText = "Starting ...";
+  let ripenUnsaved = false;        // ripening steps since the vault was saved (#32)
+  let savedLevelNote = null;       // the key level the save button mentions
+  const vaultClean = () => { vaultDirty = false; ripenUnsaved = false; savedLevelNote = null; };
 
   const call = (msg, transfer = []) => new Promise((resolve) => {
     const id = nextId++;
@@ -33,7 +36,16 @@
       const data = JSON.stringify(m.data);
       for (const s of sockets) s._message(data);
     } else if (m.type === "vault-changed") {
-      if (kept) keepSoon(); else { vaultDirty = true; updateBar(); }
+      // kind (#32): "data", "level" (a key reached a new level) or "ripening" (only a
+      // checkpoint, minutes apart). Offer to save on the first two; a checkpoint only
+      // keeps the warning on leaving. An older backend sends no kind: as "data".
+      if (kept) keepSoon();
+      else if (m.kind === "ripening") ripenUnsaved = true;
+      else {
+        vaultDirty = true;
+        if (m.kind === "level" && m.level !== null && m.level !== undefined) savedLevelNote = m.level;
+        updateBar();
+      }
     } else if (m.type === "boot") {
       bootText = m.text; updateBoot();
     } else if (m.type === "ready") {
@@ -295,7 +307,7 @@
         await keepVersion(offer.version, files, bases, !offer.unsigned, (n, all) => { status.textContent = `Checked ${n} of ${all} files ...`; });
         status.textContent = "Done. Starting the new version ...";
         if (kept && keepTimer) { clearTimeout(keepTimer); await storeVault().catch(() => {}); }
-        vaultDirty = false;
+        vaultClean();
         location.reload();
       } catch (err) { status.textContent = "Not updated: " + err.message; go.disabled = false; }
     } } }, "Update now");
@@ -373,7 +385,7 @@
     const bytes = await file.arrayBuffer();
     const r = await call({ type: "vault-in", bytes }, [bytes]);
     if (!r.ok) { alert(r.error || "Could not open that file"); return; }
-    vaultDirty = false;
+    vaultClean();
     if (typeof S !== "undefined" && typeof api === "function" && typeof render === "function") {
       await refreshState(); S.error = null; render();
     }
@@ -388,10 +400,10 @@
     a.download = "unseenet.vault";
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    vaultDirty = false; updateBar();
+    vaultClean(); updateBar();
   }
 
-  window.addEventListener("beforeunload", (e) => { if (vaultDirty && !kept) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", (e) => { if ((vaultDirty || ripenUnsaved) && !kept) { e.preventDefault(); e.returnValue = ""; } });
 
   // --- the vault kept on this device (UN-RFC 0043 6.2: only when turned on) --
   // The stored file is the same encrypted vault as on a stick: without the
@@ -416,7 +428,7 @@
     const r = await call({ type: "vault-out" });
     if (!r.bytes) return false;
     await idbDo("readwrite", (s) => s.put({ bytes: r.bytes, saved: Date.now() }, "vault"));
-    vaultDirty = false; updateBar();
+    vaultClean(); updateBar();
     return true;
   }
   function keepSoon() {
@@ -498,7 +510,9 @@
     save.classList.toggle("uw-dirty", vaultDirty);
     const narrow = window.matchMedia("(max-width: 760px)").matches;
     save.textContent = narrow ? (vaultDirty ? "Save vault •" : "Save vault") :
-      (vaultDirty ? "Save vault file (changed)" : "Save vault file");
+      (!vaultDirty ? "Save vault file" : savedLevelNote !== null ? `Save vault file (key level ${savedLevelNote})` : "Save vault file (changed)");
+    save.title = savedLevelNote !== null ? `Your key reached level ${savedLevelNote}. Save the vault to keep it.` :
+      ripenUnsaved && !vaultDirty ? "Your key has ripened a little since the vault was saved." : "";
   }
   function updateBoot(failed) {
     if (!boot) return;
@@ -601,7 +615,7 @@
     bar = el("div", { class: "uw-bar" + (onion ? " uw-tor" : ""), role: "status" },
       el("span", { class: "uw-text" }, onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address."),
       el("button", { class: "uw-link", on: { onclick: aboutDialog } }, window.matchMedia("(max-width: 760px)").matches ? "Why?" : "What does that mean?"),
-      FILE ? el("button", { class: "uw-link", on: { onclick: () => { if (!vaultDirty || confirm("Your vault has changes you have not saved. Leave anyway?")) location.reload(); } } }, "Another entrance")
+      FILE ? el("button", { class: "uw-link", on: { onclick: () => { if (!(vaultDirty || ripenUnsaved) || confirm("Your vault has changes you have not saved. Leave anyway?")) location.reload(); } } }, "Another entrance")
         : el("button", { class: "uw-link", on: { onclick: entrancesDialog } }, "Other entrances"),
       el("button", { class: "uw-link uw-warn uw-swwarn", hidden: "", on: { onclick: () => alert(
         "This entrance now serves a service worker - the part of the app that the browser fetches by itself - " +
