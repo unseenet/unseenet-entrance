@@ -30,6 +30,10 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 - The web client is built from unseenet-gui 0.1.1: text you type in the
   compose window and on first start no longer disappears when the screen
   is redrawn.
+- The page offers to save the vault when something in it changed or a key
+  reached a new level ("Save vault file (key level 1)"), not after every
+  ripening checkpoint, which came every few minutes. Leaving the page still
+  warns while ripening steps are unsaved (#32).
 
 ## [0.1.0] - 2026-10-22
 
