@@ -35,7 +35,7 @@ env:
   # The releases the web client is built from: the core within the range
   # pyproject.toml asks for, and the graphical client that runs on it.
   CORE_REF: v0.4.2
-  GUI_REF: v0.1.0
+  GUI_REF: v0.1.1
 
 jobs:
   web:

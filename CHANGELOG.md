@@ -27,6 +27,9 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 - The web client is built from unseenet 0.4.2, so it ripens keys, and a
   new user reads at once while the key ripens.
+- The web client is built from unseenet-gui 0.1.1: text you type in the
+  compose window and on first start no longer disappears when the screen
+  is redrawn.
 
 ## [0.1.0] - 2026-10-22
 
