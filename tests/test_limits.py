@@ -38,3 +38,12 @@ def test_meminfo_is_read(tmp_path):
     p = tmp_path / "meminfo"
     p.write_text("MemTotal:  1000000 kB\nMemAvailable:  512000 kB\n")
     assert server._mem_available(str(p)) == 512000 * 1024
+
+
+def test_tls_connections_get_a_small_read_buffer(monkeypatch):
+    """#19: 16 KiB instead of asyncio's 256 KiB per TLS connection."""
+    import asyncio.sslproto
+    from unseenet_entrance import server
+    monkeypatch.setattr(asyncio.sslproto.SSLProtocol, "max_size", 256 * 1024)
+    assert server.shrink_tls_buffer() is True
+    assert asyncio.sslproto.SSLProtocol.max_size == 16 * 1024

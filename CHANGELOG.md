@@ -25,6 +25,9 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ### Changed
 
+- A TLS connection's read buffer is 16 KiB instead of asyncio's 256 KiB: a
+  tunnel costs about 99 KB instead of 333 KB, so the same machine holds
+  about three times as many visitors (#19).
 - The web client is built from unseenet 0.4.2, so it ripens keys, and a
   new user reads at once while the key ripens.
 - The web client is built from unseenet-gui 0.1.1: text you type in the

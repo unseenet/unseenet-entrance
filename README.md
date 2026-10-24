@@ -120,7 +120,11 @@ Run the same command again to update the entrance's own code; settings in
 | `ENTRANCE_TRUST_FORWARDED=1` | A reverse proxy on this machine sits in front |
 
 Then `systemctl restart unseenet-entrance`. Never put it behind a CDN that
-ends TLS on someone else's machine (UN-RFC 0043 section 5). Certificates:
+ends TLS on someone else's machine (UN-RFC 0043 section 5). A TLS tunnel costs
+the entrance about 100 KB of memory; for a very busy entrance, TLS ended by
+Caddy or HAProxy **on the same machine** (`TLS=none`, the entrance on
+127.0.0.1, `ENTRANCE_TRUST_FORWARDED=1`, and that proxy's logs off) brings it
+to about 36 KB - allowed by section 5, but one more program to keep quiet. Certificates:
 [docs/certificates.md](docs/certificates.md). To have your entrance in the
 signed list that apps and the jump page use, open an issue here.
 
