@@ -6,8 +6,8 @@ What this server does, and nothing more (UN-RFC 0043 sections 4-5):
 - serves the web client's static files;
 - for ``/onntp?node=<v3 onion>``, opens a connection over Tor to that onion
   address on port 119 and copies bytes both ways, unchanged;
-- gives every WebSocket its own Tor circuit (SOCKS isolation with random
-  credentials);
+- gives each web-client session one Tor circuit per node, and every other
+  WebSocket a circuit of its own (SOCKS isolation, UN-RFC 0043 4.1.1);
 - answers ``/.well-known/unseenet-entrance``, ``/.well-known/unseenet-entrances.json``
   and ``/.well-known/unseenet-releases.json``;
 - keeps the web client it serves up to date with signed versions (release.py),
@@ -63,7 +63,8 @@ class Config:
     nodes: str = "known"                     # "known" or "any" (UN-RFC 0043 4.1)
     nodes_file: Path = Path(__file__).resolve().parent / "nodes.json"
     extra_nodes: list[str] = field(default_factory=list)
-    max_per_visitor: int = 6                 # open tunnels per visitor
+    max_per_visitor: int = 64                # open tunnels per visitor, a cap per session's worth
+    max_sessions: int = 16                   # sessions per visitor (UN-RFC 0043 4.2, #21)
     max_total: int = 300                     # open tunnels in all
     trust_forwarded: bool = False            # behind a local reverse proxy / tunnel
     tls_cert: Path | None = None             # HTTPS on ``port`` when set (docs/certificates.md)
@@ -98,6 +99,7 @@ class Config:
         c.nodes = e("ENTRANCE_NODES", c.nodes)
         c.extra_nodes = [a for a in e("ENTRANCE_EXTRA_NODES", "").split() if a]
         c.max_per_visitor = int(e("ENTRANCE_MAX_PER_VISITOR", c.max_per_visitor))
+        c.max_sessions = int(e("ENTRANCE_MAX_SESSIONS_PER_VISITOR", c.max_sessions))
         total = e("ENTRANCE_MAX_TOTAL", "auto").strip().lower()
         c.max_total = auto_max_total()[0] if total == "auto" else int(total)
         c.trust_forwarded = e("ENTRANCE_TRUST_FORWARDED", "") in ("1", "yes", "true")
@@ -141,40 +143,87 @@ class Config:
         return found | set(self.extra_nodes)
 
 
-class Limits:
-    """Open tunnels per visitor and in total, in memory only."""
+SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{22,64}$")   # a session tag (UN-RFC 0043 4.1.1)
 
-    def __init__(self, per_visitor: int, total: int):
+
+def session_tag(request: web.Request) -> str | None:
+    """The web client's session tag, or None when there is none or it is not well formed."""
+    tag = request.query.get("session", "")
+    return tag if SESSION_RE.match(tag) else None
+
+
+@dataclass
+class Visitor:
+    tunnels: int = 0
+    sessions: dict = field(default_factory=dict)      # session key -> open tunnels
+    seen: float = 0.0
+
+
+@dataclass(frozen=True)
+class Ticket:
+    """What ``take`` gave out, to give back: the visitor's and the session's keys."""
+    visitor: bytes
+    session: bytes
+
+
+class Limits:
+    """Open tunnels and sessions per visitor, and tunnels in total, in memory only
+    (UN-RFC 0043 4.2). Everything is keyed by an HMAC under a key made at start and
+    never written down; a session tag is never kept as it was sent."""
+
+    def __init__(self, per_visitor: int, total: int, sessions: int = 16):
         self.key = secrets.token_bytes(32)        # never written down
-        self.per_visitor, self.total = per_visitor, total
-        self.open: dict[bytes, tuple[int, float]] = {}
+        self.per_visitor, self.total, self.sessions = per_visitor, total, sessions
+        self.open: dict[bytes, Visitor] = {}
         self.count = 0
 
-    def _tag(self, address: str) -> bytes:
-        return hmac.new(self.key, address.encode(), hashlib.sha256).digest()[:16]
+    def _mac(self, *parts: str) -> bytes:
+        return hmac.new(self.key, "\0".join(parts).encode(), hashlib.sha256).digest()
 
-    def take(self, address: str) -> bytes | None:
+    def credentials(self, address: str, session: str | None) -> tuple[str, str]:
+        """SOCKS user and password for a tunnel (section 4.1.1): the same for one
+        visitor's tunnels of one session, so they share a circuit to each node;
+        different for another session or another visitor; random without a tag."""
+        if session is None:
+            return secrets.token_hex(16), secrets.token_hex(16)
+        mac = self._mac("socks", address, session).hex()
+        return mac[:32], mac[32:]
+
+    def take(self, address: str, session: str | None = None) -> Ticket | None:
         now = time.monotonic()
-        for tag, (_, seen) in list(self.open.items()):
-            if now - seen > LIMIT_WINDOW:
+        for tag, v in list(self.open.items()):
+            if now - v.seen > LIMIT_WINDOW:
                 del self.open[tag]
         if self.count >= self.total:
             return None
-        tag = self._tag(address)
-        n, _ = self.open.get(tag, (0, now))
-        if n >= self.per_visitor:
+        tag = self._mac("visitor", address)[:16]
+        # a tunnel without a tag is a session of its own
+        key = self._mac("session", address, session)[:16] if session else secrets.token_bytes(16)
+        v = self.open.get(tag) or Visitor(seen=now)
+        if v.tunnels >= self.per_visitor:
             return None
-        self.open[tag] = (n + 1, now)
+        if key not in v.sessions and len(v.sessions) >= self.sessions:
+            return None
+        v.tunnels += 1
+        v.sessions[key] = v.sessions.get(key, 0) + 1
+        v.seen = now
+        self.open[tag] = v
         self.count += 1
-        return tag
+        return Ticket(tag, key)
 
-    def give(self, tag: bytes) -> None:
+    def give(self, ticket: Ticket) -> None:
         self.count = max(0, self.count - 1)
-        n, seen = self.open.get(tag, (1, 0.0))
-        if n <= 1:
-            self.open.pop(tag, None)
+        v = self.open.get(ticket.visitor)
+        if v is None:
+            return
+        v.tunnels -= 1
+        n = v.sessions.get(ticket.session, 1) - 1
+        if n <= 0:
+            v.sessions.pop(ticket.session, None)
         else:
-            self.open[tag] = (n - 1, seen)
+            v.sessions[ticket.session] = n
+        if v.tunnels <= 0:
+            self.open.pop(ticket.visitor, None)
 
 
 def visitor_address(request: web.Request, cfg: Config) -> str:
@@ -186,9 +235,22 @@ def visitor_address(request: web.Request, cfg: Config) -> str:
     return request.remote or "?"
 
 
-async def open_tunnel(cfg: Config, onion: str) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    """A stream to ``onion:119`` on a Tor circuit of its own (SOCKS isolation)."""
-    user, password = secrets.token_hex(8), secrets.token_hex(8)
+def visitor_key(address: str, local_port: int | None, cfg: "Config", session: str | None) -> str:
+    """Who a tunnel's limits and circuit belong to. On the open web: the visitor's
+    address. Through the entrance's onion service every visitor arrives from Tor on
+    127.0.0.1, so the address says nothing: each session counts as a visitor of its
+    own there, and only tunnels without a tag share one (UN-RFC 0043 4.2)."""
+    if cfg.onion_port and local_port == cfg.onion_port:
+        return "onion\0" + (session or "")
+    return address
+
+
+async def open_tunnel(cfg: Config, onion: str, credentials: tuple[str, str] | None = None
+                      ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """A stream to ``onion:119`` over Tor. Tor keeps streams with other SOCKS
+    credentials on other circuits: ``credentials`` from ``Limits.credentials`` (one
+    circuit per session, UN-RFC 0043 4.1.1), or random ones - a circuit of its own."""
+    user, password = credentials or (secrets.token_hex(16), secrets.token_hex(16))
     proxy = Proxy.from_url(f"socks5://{user}:{password}@{cfg.socks_host}:{cfg.socks_port}",
                            rdns=True)
     for pause in (2, 5, None):            # a fresh descriptor can take a moment
@@ -211,14 +273,19 @@ async def onntp(request: web.Request) -> web.StreamResponse:
     allowed = request.app["allowed"]
     if allowed is not None and onion not in allowed:
         return web.Response(status=403, text="this entrance only connects to known nodes\n")
-    tag = limits.take(visitor_address(request, cfg))
+    session = session_tag(request)
+    sockname = request.transport.get_extra_info("sockname") if request.transport else None
+    local_port = sockname[1] if isinstance(sockname, tuple) and len(sockname) > 1 else None
+    visitor = visitor_key(visitor_address(request, cfg), local_port, cfg, session)
+    tag = limits.take(visitor, session)
     if tag is None:
         return web.Response(status=429, text="too many connections\n")
+    credentials = limits.credentials(visitor, session)
     ws = web.WebSocketResponse(max_msg_size=CHUNK * 4, heartbeat=30)
     try:
         await ws.prepare(request)
         try:
-            reader, writer = await open_tunnel(cfg, onion)
+            reader, writer = await open_tunnel(cfg, onion, credentials)
         except (ProxyError, OSError, asyncio.TimeoutError):
             await ws.close(code=4004, message=b"node unreachable over Tor")
             return ws
@@ -383,7 +450,7 @@ async def static(request: web.Request) -> web.StreamResponse:
 def make_app(cfg: Config) -> web.Application:
     app = web.Application(middlewares=[headers, home])
     app["cfg"] = cfg
-    app["limits"] = Limits(cfg.max_per_visitor, cfg.max_total)
+    app["limits"] = Limits(cfg.max_per_visitor, cfg.max_total, cfg.max_sessions)
     app["allowed"] = cfg.allowed_nodes()
     app["list"] = ListCache(cfg.list_group)
     app["releases"] = ListCache(cfg.release_group)

@@ -11,6 +11,21 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ### Added
 
+- **One Tor circuit per session** (#21, UN-RFC 0043 4.1.1): the web client
+  sends a random session tag, made when it starts and kept in memory only, and
+  the entrance derives the SOCKS credentials from an HMAC of the visitor's
+  address and the tag. A session's tunnels to one node share a circuit, so
+  the entrance and the node build half as many; other sessions and other
+  visitors never share one. Without a tag, a tunnel gets a circuit of its own.
+- **Limits counted in sessions** (UN-RFC 0043 4.2):
+  `ENTRANCE_MAX_SESSIONS_PER_VISITOR` (16), so people behind one address are
+  no longer refused at 6 tunnels; `ENTRANCE_MAX_PER_VISITOR` is now a cap of
+  64 tunnels. An entrance with `ENTRANCE_MAX_PER_VISITOR=6` set by hand keeps
+  that cap - remove it.
+- Visitors through the entrance's onion service, who all arrive from Tor on
+  127.0.0.1, no longer share one visitor's limits: there each session counts as
+  a visitor of its own (only the total bounds them, as nothing else can tell
+  them apart).
 - **The web client is served compressed** (#22): a `.gz` copy (and `.br` when
   the `brotli` module is installed) beside every file over 1 KB that gets at
   least 10 % smaller, made from files just checked against a signed release
