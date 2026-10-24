@@ -132,6 +132,9 @@ class Config:
             "statement": e("ENTRANCE_STATEMENT", "memory only, no logs, no third-party proxy"),
             "software": f"unseenet-entrance {__version__}",
         }
+        claim = e("ENTRANCE_CLAIM", "").strip()
+        if claim:            # "Add my entrance": shows the asker runs it (#3), then remove
+            c.info["claim"] = claim[:200]
         return c
 
     def allowed_nodes(self) -> set[str] | None:

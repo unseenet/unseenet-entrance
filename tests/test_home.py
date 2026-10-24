@@ -18,3 +18,10 @@ def test_a_name_points_to_the_address():
             assert (await get("/", "129.151.209.26")).status != 302
             assert (await get("/", "abc.onion")).status != 302      # the onion is its own way in
     asyncio.run(run())
+
+
+def test_a_claim_is_shown_while_asking_to_be_listed(monkeypatch):
+    monkeypatch.setenv("ENTRANCE_CLAIM", "unseenet-entrance-claim unseenet/unseenet#9 " + "a" * 32)
+    assert server.Config.from_env().info["claim"].endswith("a" * 32)
+    monkeypatch.delenv("ENTRANCE_CLAIM")
+    assert "claim" not in server.Config.from_env().info
