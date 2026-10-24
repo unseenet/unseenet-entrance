@@ -11,6 +11,12 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ### Added
 
+- **The web client is served compressed** (#22): a `.gz` copy (and `.br` when
+  the `brotli` module is installed) beside every file over 1 KB that gets at
+  least 10 % smaller, made from files just checked against a signed release
+  (or just built) and served by aiohttp to browsers that accept it. A first
+  visit goes from about 15 MB to about 7.8 MB. Not in `release.sums`: the
+  browser decompresses before the service worker checks a file.
 - `tools/chiavdf`: chiavdf for Pyodide, so the web client can ripen its own
   keys (UN-RFC 0025). The wheel is built with GMP's limbs made 64-bit for
   wasm32, and checked in Pyodide against native chiavdf's proofs and the
