@@ -59,3 +59,17 @@ def test_only_well_formed_tags():
     for bad in ("", "&session=short", "&session=" + "a" * 65, "&session=has%20space",
                 "&session=a/b" + "c" * 30):
         assert session_tag(req(bad)) is None
+
+
+def test_onion_visitors_are_told_apart_by_session():
+    """Through the onion service everyone comes from 127.0.0.1: one session, one visitor."""
+    from unseenet_entrance.server import Config, visitor_key
+    cfg = Config(onion_port=8044, port=8043)
+    s1, s2 = tag(), tag()
+    assert visitor_key("127.0.0.1", 8044, cfg, s1) != visitor_key("127.0.0.1", 8044, cfg, s2)
+    assert visitor_key("127.0.0.1", 8044, cfg, None) == visitor_key("127.0.0.1", 8044, cfg, None)
+    assert visitor_key(A, 8043, cfg, s1) == A                   # the open web: the address
+    assert visitor_key("127.0.0.1", 8043, Config(onion_port=0), s1) == "127.0.0.1"
+    lim = Limits(per_visitor=64, total=1000, sessions=2)
+    onion_people = [visitor_key("127.0.0.1", 8044, cfg, tag()) for _ in range(5)]
+    assert all(lim.take(v, None) for v in onion_people)     # not 2 sessions for all of Tor

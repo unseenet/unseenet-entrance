@@ -22,6 +22,10 @@ in `unseenet.releases`); this file is about the entrance that serves it.
   no longer refused at 6 tunnels; `ENTRANCE_MAX_PER_VISITOR` is now a cap of
   64 tunnels. An entrance with `ENTRANCE_MAX_PER_VISITOR=6` set by hand keeps
   that cap - remove it.
+- Visitors through the entrance's onion service, who all arrive from Tor on
+  127.0.0.1, no longer share one visitor's limits: there each session counts as
+  a visitor of its own (only the total bounds them, as nothing else can tell
+  them apart).
 - **The web client is served compressed** (#22): a `.gz` copy (and `.br` when
   the `brotli` module is installed) beside every file over 1 KB that gets at
   least 10 % smaller, made from files just checked against a signed release

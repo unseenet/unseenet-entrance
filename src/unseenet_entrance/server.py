@@ -235,6 +235,16 @@ def visitor_address(request: web.Request, cfg: Config) -> str:
     return request.remote or "?"
 
 
+def visitor_key(address: str, local_port: int | None, cfg: "Config", session: str | None) -> str:
+    """Who a tunnel's limits and circuit belong to. On the open web: the visitor's
+    address. Through the entrance's onion service every visitor arrives from Tor on
+    127.0.0.1, so the address says nothing: each session counts as a visitor of its
+    own there, and only tunnels without a tag share one (UN-RFC 0043 4.2)."""
+    if cfg.onion_port and local_port == cfg.onion_port:
+        return "onion\0" + (session or "")
+    return address
+
+
 async def open_tunnel(cfg: Config, onion: str, credentials: tuple[str, str] | None = None
                       ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """A stream to ``onion:119`` over Tor. Tor keeps streams with other SOCKS
@@ -263,7 +273,10 @@ async def onntp(request: web.Request) -> web.StreamResponse:
     allowed = request.app["allowed"]
     if allowed is not None and onion not in allowed:
         return web.Response(status=403, text="this entrance only connects to known nodes\n")
-    visitor, session = visitor_address(request, cfg), session_tag(request)
+    session = session_tag(request)
+    sockname = request.transport.get_extra_info("sockname") if request.transport else None
+    local_port = sockname[1] if isinstance(sockname, tuple) and len(sockname) > 1 else None
+    visitor = visitor_key(visitor_address(request, cfg), local_port, cfg, session)
     tag = limits.take(visitor, session)
     if tag is None:
         return web.Response(status=429, text="too many connections\n")
