@@ -11,6 +11,15 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ### Added
 
+- **Tor in the browser is used by itself** (#1): when .onion addresses work in
+  the browser (Tor Browser, Onion Browser, Brave's Tor windows), the web client
+  moves its tunnel to the entrance's own onion address, from
+  `/.well-known/unseenet-entrance`, so the entrance cannot see the visitor's
+  address. The page and the vault stay where they are; the bar turns purple,
+  "Through Tor - the entrance cannot see your address". It asks again when the
+  network comes back, and for another entrance chosen. In an ordinary browser
+  nothing changes: the probe fails at once. Straight to a node's onion waits
+  for nodes that take WebSockets (unseenet/unseenet#259).
 - **One Tor circuit per session** (#21, UN-RFC 0043 4.1.1): the web client
   sends a random session tag, made when it starts and kept in memory only, and
   the entrance derives the SOCKS credentials from an HMAC of the visitor's

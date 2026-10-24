@@ -108,6 +108,7 @@
     ws.protocol = ws.protocol === "https:" ? "wss:" : "ws:";
     startWorker(new Worker("data:text/javascript;charset=utf-8," + encodeURIComponent(src), { type: "module" }),
       { files, entrance: ws.href }, Object.values(files));
+    useTorIfThere(entrance.url);
   }
 
   if (FILE) {
@@ -117,10 +118,48 @@
   } else {
     // an app on the home screen: the client kept on the device by a service worker
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-    chooseTunnel().catch(() => null).then((ws) => startWorker(new Worker("/worker.js", { type: "module" }), ws ? { entrance: ws } : {}));
+    chooseTunnel().catch(() => null).then((ws) => {
+      startWorker(new Worker("/worker.js", { type: "module" }), ws ? { entrance: ws } : {});
+      useTorIfThere(entrance ? entrance.url : location.origin + "/");
+    });
     setTimeout(() => checkVersions().catch(() => {}), 3000);
     setInterval(() => checkVersions().catch(() => {}), 6 * 3600 * 1000);
   }
+
+  // --- Tor in this browser: the entrance's onion, so it cannot see your address (#1) --
+  // A page cannot use a Tor running beside the browser, but when .onion addresses work
+  // in this browser (Tor Browser, Onion Browser, Brave's Tor windows) its traffic goes
+  // through Tor already. Then the tunnel goes to the entrance's onion address, from
+  // /.well-known/unseenet-entrance (UN-RFC 0043 4.3): the same entrance, which now
+  // cannot see who you are. Only the tunnel moves; the page and the vault stay here.
+  // A browser without Tor cannot resolve .onion at all, so the probe fails at once
+  // and tells nobody anything. (Straight to a node's onion needs nodes to take
+  // WebSockets, unseenet/unseenet#259 - not yet.)
+  let viaTor = false, torBase = null;
+  const torNow = () => onion || viaTor;
+  async function torTunnel(base) {
+    if (onion) return null;                       // already on the entrance's onion
+    let info;
+    try { info = await getJSON(new URL(".well-known/unseenet-entrance", base).href, 6000); }
+    catch { return null; }
+    const o = info && typeof info.onion === "string" ? info.onion.trim().toLowerCase() : "";
+    if (!/^[a-z2-7]{56}\.onion$/.test(o)) return null;
+    if (!(await answers(`http://${o}/`, 5000))) return null;
+    return `ws://${o}/onntp`;
+  }
+  async function useTorIfThere(base) {
+    if (onion || viaTor) return;
+    torBase = base;
+    const ws = await torTunnel(base).catch(() => null);
+    if (!ws || torBase !== base) return;          // no Tor here, or another entrance since
+    await call({ type: "entrance", url: ws });
+    viaTor = true;
+    updateBar();
+  }
+  // a phone that starts Orbot or joins another network: ask again
+  window.addEventListener("online", () => {
+    if (!viaTor && torBase) useTorIfThere(torBase);
+  });
 
   // --- when this entrance is gone: another one from the signed list (UN-RFC 0043 8.3) --
   // The page and the client may come from the device (the service worker); only the
@@ -493,7 +532,10 @@
   }
   function updateBar() {
     if (!bar) return;
-    bar.querySelector(".uw-text").textContent = entrance
+    bar.classList.toggle("uw-tor", torNow());
+    bar.querySelector(".uw-text").textContent = viaTor
+      ? `Through Tor${entrance ? ", via " + entrance.name : ""} - the entrance cannot see your address.`
+      : entrance
       ? `Open web, through ${entrance.name} - it can see your IP address.`
       : onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address.";
     const unlocked = typeof S !== "undefined" && S.state && S.state.unlocked;
@@ -526,7 +568,9 @@
     ws.protocol = ws.protocol === "https:" ? "wss:" : "ws:";
     await call({ type: "entrance", url: ws.href });
     entrance = new URL(e.url).origin === location.origin ? null : e;
+    viaTor = false;
     updateBar();
+    useTorIfThere(e.url);
   }
 
   // Other entrances: the signed list, which of them answer, and the list as a file
@@ -587,12 +631,12 @@
       ["Groups and nodes can be removed by someone", "No", "No"],
       ["Others can delete or change your signed posts", "No", "No"],
       ["Nodes learn your IP address", "No", "No"],
-      ["The entrance learns your IP address", "(no entrance)", onion ? "No (Tor Browser)" : "Yes"],
+      ["The entrance learns your IP address", "(no entrance)", onion ? "No (Tor Browser)" : viaTor ? "No (through Tor)" : "Yes"],
       ["You must trust code served to you", "Once, signed", "Every visit"],
-      ["Easy to block", "Hard", onion ? "Hard" : "This entrance, yes"],
+      ["Easy to block", "Hard", torNow() ? "Hard" : "This entrance, yes"],
     ];
     const d = el("dialog", { class: "uw-dialog" },
-      el("h2", {}, onion ? "You are in Tor Browser" : "You are on the open web"),
+      el("h2", {}, onion ? "You are in Tor Browser" : viaTor ? "Your browser goes through Tor" : "You are on the open web"),
       el("p", {}, "This is Unseenet's graphical client, running in your browser. Your keys stay here: this page signs, checks signatures and pays the postage itself. The entrance only carries bytes to a node over Tor."),
       el("table", {}, el("tr", {}, el("th"), el("th", {}, "Real client"), el("th", {}, "This page")),
         ...rows.map(([a, b, c]) => el("tr", {}, el("td", {}, a), el("td", {}, b), el("td", { class: c.startsWith("Yes") || c.startsWith("Every") || c.startsWith("This") ? "uw-warn" : "" }, c)))),
