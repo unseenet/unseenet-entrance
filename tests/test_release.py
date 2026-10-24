@@ -86,3 +86,28 @@ def test_update_from_another_entrance(tmp_path):
     assert os.readlink(releases / "current") == v
     sums = (releases / "current" / "release.sums").read_text()
     assert "shim.js" in sums and "index.html" in sums
+
+
+def test_long_response_headers_are_read():
+    """GitHub's downloads send a Content-Security-Policy longer than aiohttp's 8190."""
+    import asyncio
+
+    import aiohttp
+
+    from unseenet_entrance.release import CLIENT_LIMITS, _get
+
+    async def run():
+        async def handle(r, w):
+            await r.readuntil(b"\r\n\r\n")
+            w.write(b"HTTP/1.1 200 OK\r\nContent-Security-Policy: " + b"x" * 20000
+                    + b"\r\nContent-Length: 2\r\n\r\nok")
+            await w.drain()
+            w.close()
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            async with aiohttp.ClientSession(**CLIENT_LIMITS) as s:
+                return await _get(s, f"http://127.0.0.1:{port}/x.zip", 100)
+        finally:
+            server.close()
+    assert asyncio.run(run()) == b"ok"

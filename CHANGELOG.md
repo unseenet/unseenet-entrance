@@ -9,6 +9,13 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Updating the web client and the mirror from GitHub failed**: GitHub's
+  download answers carry a header longer than aiohttp's limit of 8190 octets
+  ("Got more than 8190 bytes when reading"), so the release zip could never be
+  fetched. The limits are now 64 KiB. Found on the project's entrance on 24 Oct.
+
 ### Added
 
 - `ENTRANCE_CLAIM`: while asking to be listed ("Add my entrance", #3), the
