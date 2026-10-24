@@ -4,12 +4,20 @@ Replaces unseenet.core.tor.open_connection when the core runs in Pyodide:
 the entrance carries the bytes to the node over Tor, so ``Client`` works unchanged.
 """
 import asyncio
+import secrets
 
 from js import Uint8Array, WebSocket
 from pyodide.ffi import create_proxy, to_js
 
 ENTRANCE = None          # e.g. "wss://entrance.example/onntp"
 OPEN = set()             # the writers of open connections, to close them when switching
+SESSION = None           # this session's tag (UN-RFC 0043 4.1.1): in memory only, never stored
+
+
+def new_session():
+    """A new session tag: one Tor circuit per node at the entrance for this session."""
+    global SESSION
+    SESSION = secrets.token_urlsafe(16)
 
 
 class WSWriter:
@@ -42,7 +50,8 @@ async def open_connection(address, socks_port=None):
     host = address.rpartition(":")[0] or address
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader(limit=2 ** 20)
-    ws = WebSocket.new(f"{ENTRANCE}?node={host}")
+    ws = WebSocket.new(f"{ENTRANCE}?node={host}&session={SESSION}" if SESSION
+                       else f"{ENTRANCE}?node={host}")
     ws.binaryType = "arraybuffer"
     opened = loop.create_future()
 
@@ -70,6 +79,7 @@ def install(entrance_url):
     """Point the core's transport at an entrance."""
     global ENTRANCE
     ENTRANCE = entrance_url
+    new_session()
     from unseenet.core import tor
     from unseenet import nntp
     tor.open_connection = open_connection
@@ -81,6 +91,7 @@ def switch(entrance_url):
     are closed, so the client connects again - through it (UN-RFC 0043 8.3)."""
     global ENTRANCE
     ENTRANCE = entrance_url
+    new_session()                # another entrance: another session there
     for writer in list(OPEN):
         try:
             writer.close()

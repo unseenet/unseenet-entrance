@@ -116,7 +116,8 @@ Run the same command again to update the entrance's own code; settings in
 | `ENTRANCE_OPERATOR`, `ENTRANCE_CONTACT` | Who runs it, shown in `/.well-known/unseenet-entrance` |
 | `ENTRANCE_AUTO_UPDATE=off` | Stop the web client from updating itself |
 | `ENTRANCE_NODES=any` | Tunnel to any onion node, not only the known ones |
-| `ENTRANCE_MAX_PER_VISITOR`, `ENTRANCE_MAX_TOTAL` | Open tunnels per visitor (6) and in all (`auto`: what the available memory and the open-file limit allow, about 120 KB and two open files per tunnel; printed at start; a number overrides it) |
+| `ENTRANCE_MAX_SESSIONS_PER_VISITOR` | Web-client sessions per visitor address (16), so a family or a school behind one address is not refused; each session gets one Tor circuit per node (UN-RFC 0043 4.1.1) |
+| `ENTRANCE_MAX_PER_VISITOR`, `ENTRANCE_MAX_TOTAL` | Open tunnels per visitor (64, so one session cannot open hundreds) and in all (`auto`: what the available memory and the open-file limit allow, about 120 KB and two open files per tunnel; printed at start; a number overrides it) |
 | `ENTRANCE_TRUST_FORWARDED=1` | A reverse proxy on this machine sits in front |
 
 Then `systemctl restart unseenet-entrance`. Never put it behind a CDN that
@@ -130,8 +131,10 @@ signed list that apps and the jump page use, open an issue here.
 
 ### What an entrance does, and does not
 
-- It tunnels a browser's WebSocket to a **known node's** onion service, each
-  on a Tor circuit of its own, and copies bytes both ways, unchanged.
+- It tunnels a browser's WebSocket to a **known node's** onion service and
+  copies bytes both ways, unchanged. The tunnels of one web-client session
+  share a Tor circuit to each node, as Unseenet's own clients do; other
+  sessions and other visitors never share one (UN-RFC 0043 4.1.1).
 - It serves the web client, and the signed lists it reads from the network
   about once an hour: the entrances (`/.well-known/unseenet-entrances.json`)
   and the versions of the web client (`/.well-known/unseenet-releases.json`),
