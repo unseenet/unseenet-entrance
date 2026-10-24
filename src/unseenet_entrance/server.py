@@ -410,6 +410,25 @@ def tls_context(cfg: Config):
     return ctx
 
 
+TLS_READ_BUFFER = 16 * 1024   # one TLS record is at most 16 KiB (#19)
+
+
+def shrink_tls_buffer(size: int = TLS_READ_BUFFER) -> bool:
+    """Give every TLS connection a read buffer of ``size`` instead of asyncio's 256 KiB.
+
+    Each TLS tunnel cost about 333 KB, most of it ``bytearray(SSLProtocol.max_size)``;
+    with 16 KiB it is about 99 KB, with no difference in reply times (#19, load
+    test #18). ``max_size`` is a class attribute of CPython 3.11+'s
+    ``asyncio.sslproto.SSLProtocol``; if a later Python moves it, nothing changes
+    and this returns False."""
+    import asyncio.sslproto
+    proto = getattr(asyncio.sslproto, "SSLProtocol", None)
+    if proto is None or not isinstance(getattr(proto, "max_size", None), int):
+        return False
+    proto.max_size = size
+    return True
+
+
 async def reload_tls(ctx, cfg: Config) -> None:
     """Pick up a renewed certificate without a restart (IP certificates last ~6 days)."""
     seen = cfg.tls_cert.stat().st_mtime
@@ -449,6 +468,8 @@ def make_http_app(cfg: Config) -> web.Application:
 async def serve(cfg: Config) -> None:
     runners = []
     ctx = tls_context(cfg) if cfg.tls_cert else None
+    if ctx is not None:
+        shrink_tls_buffer()            # before the TLS site takes its first connection
     app = make_app(cfg)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
