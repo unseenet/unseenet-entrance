@@ -34,6 +34,8 @@ from pathlib import Path
 
 import aiohttp
 
+from .compress import precompress
+
 log = logging.getLogger("unseenet-entrance")
 
 PROJECT_KEY = "ed25519:det5dxevwbk36eds2indrzlazyri3fq3bgdzw6kx4ems3o267sya"
@@ -283,6 +285,8 @@ async def install(releases_dir: Path, rel: Release, current: Path | None, entran
     # what the app compares with when it keeps this version (UN-RFC 0043 7.3)
     files["release.sums"] = "".join(f"{h}  {p}\n" for p, h in sorted(rel.files.items())).encode()
     tree = _write_tree(releases_dir, rel.version, files)
+    # compressed copies, made from the files just checked (#22), before visitors get them
+    await asyncio.to_thread(precompress, tree, [p for p in files if p != "release.sums"])
     switch(releases_dir, rel.version)
     return tree
 
@@ -299,7 +303,8 @@ def adopt(releases_dir: Path, web: Path) -> str:
         files[path] = data
     files["release.sums"] = (web / "release.sums").read_bytes()
     releases_dir.mkdir(parents=True, exist_ok=True)
-    _write_tree(releases_dir, version, files)
+    tree = _write_tree(releases_dir, version, files)
+    precompress(tree, [p for p in files if p != "release.sums"])     # #22
     switch(releases_dir, version)
     return version
 

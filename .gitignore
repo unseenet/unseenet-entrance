@@ -14,3 +14,7 @@ web/release.sums
 web/lib.js
 tools/chiavdf/.build/
 dist/
+web/**/*.gz
+web/**/*.br
+web/*.gz
+web/*.br

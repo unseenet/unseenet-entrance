@@ -186,7 +186,8 @@ def release_files(web: Path = WEB) -> list[str]:
     files = [n for n in TOP_FILES if (web / n).is_file()]
     for d in DIRS:
         files += [p.relative_to(web).as_posix() for p in (web / d).rglob("*")
-                  if p.is_file() and p.suffix != ".py" and "__pycache__" not in p.parts]
+                  if p.is_file() and p.suffix != ".py" and "__pycache__" not in p.parts
+                  and p.suffix not in (".gz", ".br")]          # compressed copies (#22)
     return sorted(files)
 
 
@@ -207,6 +208,10 @@ def write_version(version: str, built: str) -> None:
     (WEB / "version.json").write_text(json.dumps({"version": version, "built": built}) + "\n")
     lines = [f"{sha256(WEB / f)}  {f}" for f in release_files()]
     (WEB / "release.sums").write_text("\n".join(lines) + "\n")
+    # compressed copies beside the files, served to browsers that accept them (#22)
+    sys.path.insert(0, str(ROOT / "src"))
+    from unseenet_entrance.compress import precompress
+    print(f"compressed copies: {precompress(WEB, release_files())}")
 
 
 def write_release(out: Path) -> Path:
@@ -336,6 +341,9 @@ def build_file(bundle_from: str, owner: str | None, group: str | None) -> Path:
     out = WEB / "unseenet-web.html"
     out.write_text("\n".join(parts))
     print(f"client in a file: {out.stat().st_size // (1024 * 1024)} MiB")
+    sys.path.insert(0, str(ROOT / "src"))
+    from unseenet_entrance.compress import precompress
+    precompress(WEB, [out.name])                       # a .gz beside it too (#22)
     return out
 
 
