@@ -11,6 +11,9 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ### Added
 
+- `ENTRANCE_CLAIM`: while asking to be listed ("Add my entrance", #3), the
+  challenge the request posts, shown in `/.well-known/unseenet-entrance` as
+  `claim`, so the check sees that whoever asked runs the entrance.
 - **Tor in the browser is used by itself** (#1): when .onion addresses work in
   the browser (Tor Browser, Onion Browser, Brave's Tor windows), the web client
   moves its tunnel to the entrance's own onion address, from

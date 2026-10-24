@@ -119,6 +119,7 @@ Run the same command again to update the entrance's own code; settings in
 | `ENTRANCE_MAX_SESSIONS_PER_VISITOR` | Web-client sessions per visitor address (16), so a family or a school behind one address is not refused; each session gets one Tor circuit per node (UN-RFC 0043 4.1.1) |
 | `ENTRANCE_MAX_PER_VISITOR`, `ENTRANCE_MAX_TOTAL` | Open tunnels per visitor (64, so one session cannot open hundreds) and in all (`auto`: what the available memory and the open-file limit allow, about 120 KB and two open files per tunnel; printed at start; a number overrides it) |
 | `ENTRANCE_TRUST_FORWARDED=1` | A reverse proxy on this machine sits in front |
+| `ENTRANCE_CLAIM` | While asking to be listed: the challenge the request posts, shown in `/.well-known/unseenet-entrance` to show that you run this entrance; remove it afterwards |
 
 Then `systemctl restart unseenet-entrance`. Never put it behind a CDN that
 ends TLS on someone else's machine (UN-RFC 0043 section 5). A TLS tunnel costs
@@ -127,7 +128,10 @@ Caddy or HAProxy **on the same machine** (`TLS=none`, the entrance on
 127.0.0.1, `ENTRANCE_TRUST_FORWARDED=1`, and that proxy's logs off) brings it
 to about 36 KB - allowed by section 5, but one more program to keep quiet. Certificates:
 [docs/certificates.md](docs/certificates.md). To have your entrance in the
-signed list that apps and the jump page use, open an issue here.
+signed list that apps and the jump page use, open an
+[Add my entrance](https://github.com/unseenet/unseenet/issues/new?template=add-entrance.yml)
+issue: a check reaches it over HTTPS and its onion, compares the client it
+serves with the signed release, and tunnels to a node.
 
 ### What an entrance does, and does not
 
