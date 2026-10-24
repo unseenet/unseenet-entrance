@@ -159,6 +159,8 @@ class Mirror:
 
     async def _fetch(self, channel: str, version: str, sums: bytes, sig: str) -> None:
         from unseenet import update
+
+        from .release import CLIENT_LIMITS
         table = update.parse_sums(sums)
         names = sorted(n for n in table if kind(n) in self.wanted)
         root = self.cfg.mirror_dir
@@ -166,7 +168,7 @@ class Mirror:
         shutil.rmtree(part, ignore_errors=True)
         part.mkdir(parents=True)
         current = root / channel
-        async with aiohttp.ClientSession(headers={"User-Agent": "unseenet-entrance"}) as s:
+        async with aiohttp.ClientSession(headers={"User-Agent": "unseenet-entrance"}, **CLIENT_LIMITS) as s:
             others = None
             for name in names:
                 old = current / name

@@ -46,6 +46,10 @@ NEEDED = ("index.html", "sw.js", "worker.js", "shim.js", "version.json")
 MAX_ZIP = 96 << 20
 MAX_FILE = 48 << 20
 RETRY = 6 * 3600              # after a version could not be fetched
+# GitHub's release downloads answer with a Content-Security-Policy header far over
+# aiohttp's default limit of 8190 octets, so every zip failed: "Got more than 8190
+# bytes when reading" (found 24 Oct 2026 on the project's entrance).
+CLIENT_LIMITS = {"max_line_size": 65536, "max_field_size": 65536}
 
 
 @dataclass
@@ -217,7 +221,7 @@ async def fetch_files(rel: Release, have: Path | None, entrances: list[str]) -> 
     todo = [p for p in rel.files if p not in out]
     if not todo:
         return out
-    async with aiohttp.ClientSession(headers={"User-Agent": "unseenet-entrance"}) as s:
+    async with aiohttp.ClientSession(headers={"User-Agent": "unseenet-entrance"}, **CLIENT_LIMITS) as s:
         if rel.zip:
             try:
                 raw = await _get(s, ZIP_URL.format(v=rel.version), MAX_ZIP)
