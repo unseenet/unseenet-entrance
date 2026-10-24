@@ -94,6 +94,9 @@ async def test_removing_the_run_file_stops_the_worker(webbackend, tmp_path):
 
 
 def test_a_core_without_the_seam_does_not_ripen(webbackend, monkeypatch):
-    monkeypatch.delattr(session.Session, "_prove_segment", raising=False)
+    # where the core defines it: on Session (0.4) or on one of its parts (0.5, unseenet#391)
+    for cls in session.Session.__mro__:
+        if "_prove_segment" in vars(cls):
+            monkeypatch.delattr(cls, "_prove_segment")
     webbackend._patch_ripening(Worker())
     assert rp.available() is False            # as before: the web client cannot ripen
