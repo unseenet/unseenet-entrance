@@ -9,6 +9,10 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-25
+
+For unseenet 0.5 (`unseenet>=0.5,<0.6`); update the nodes first. One Tor circuit and limits per session (UN-RFC 0043 4.1.1, 4.2), the browser's own Tor used when it has one, the web client served compressed and ripening its own keys, and *Add my entrance*.
+
 ### Fixed
 
 - **Updating the web client and the mirror from GitHub failed**: GitHub's
@@ -117,5 +121,6 @@ nodes (unseenet-gui#31).
 - Release articles go through the core's `Session` and never ripen in CI:
   they take over the key's published chain (#17).
 
-[Unreleased]: https://github.com/unseenet/unseenet-entrance/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/unseenet/unseenet-entrance/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/unseenet/unseenet-entrance/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/unseenet/unseenet-entrance/releases/tag/v0.1.0
