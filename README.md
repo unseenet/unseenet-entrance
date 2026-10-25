@@ -1,12 +1,30 @@
-<p align="center"><img src="web/icon.svg" alt="" width="64"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/unseenet/unseenet/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/unseenet/unseenet/main/assets/logo-light.svg" alt="Unseenet" width="360">
+  </picture>
+</p>
 
 <h1 align="center">unseenet-entrance</h1>
 
-<p align="center"><b>A web entrance to <a href="https://unseenet.org">Unseenet</a>: the graphical client in an ordinary browser, on a phone or a computer, with nothing to install.</b></p>
+<p align="center"><b>A web entrance to Unseenet - the graphical client in an ordinary browser.</b><br>
+On a phone or a computer, with nothing to install. The less hidden way in, on purpose.</p>
 
-> **Pre-alpha.** Neither this nor the Unseenet core has had a security
-> review. It is the less hidden way in, on purpose - see
-> [What you give up](#what-you-give-up).
+<p align="center">
+  <a href="https://pypi.org/project/unseenet-entrance/"><img src="https://img.shields.io/pypi/v/unseenet-entrance?label=PyPI" alt="PyPI"></a>
+  <a href="https://github.com/unseenet/unseenet-entrance/actions/workflows/tests.yml"><img src="https://github.com/unseenet/unseenet-entrance/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a>
+</p>
+
+> **Pre-alpha.** Nothing is stable yet, and Unseenet has not had a security
+> review. Do not rely on it to protect anyone yet.
+
+<table align="center"><tr>
+<td><img src="docs/img/web-threads.png" alt="The web client: a discussion group, read post by post" width="420"></td>
+<td><img src="docs/img/web-chat.png" alt="The web client: a chat group" width="420"></td>
+</tr></table>
+
+## What it is
 
 Unseenet is a discussion network over Tor: groups and nodes that nobody can
 remove, and posts that nobody but their author can delete or change. Its
@@ -25,7 +43,7 @@ This repository is two things:
   backend (the real [unseenet](https://github.com/unseenet/unseenet) core)
   running in the browser. Every fix to the core or the GUI reaches the web too.
 
-## Using it
+## Use it
 
 Open an entrance's address, for example the project's own,
 **https://entrance.unseenet.net/**. It sends you on to the entrance's IP
@@ -63,7 +81,7 @@ each level makes postage cheaper. Closing the page loses at most the step in
 progress, because the key's progress is kept in your vault, and the same
 vault ripens on in Unseenet's own client.
 
-## What you give up
+### What you give up
 
 | | Unseenet's own client | Through an entrance |
 |---|---|---|
@@ -146,7 +164,7 @@ serves with the signed release, and tunnels to a node.
 - It writes nothing about visitors anywhere: no access log, no error that
   names an address. Limits are counted in memory, under a key made at start.
 
-## When an entrance is blocked
+### When an entrance is blocked
 
 Every entrance serves the **jump page**, `/unseenet-entrances.html`: one small
 file with the signed list of entrances inside. Opened from disk it checks the
@@ -161,7 +179,7 @@ the signed list in one file of about 19 MB. Opened from disk it picks an
 entrance that answers and uses it only as a tunnel; no page is served, so a
 blocked address or a changed page does not matter. Chromium and Firefox.
 
-## New versions
+### New versions
 
 Every entrance serves the same build of the web client, built by
 [this repository's CI](.github/workflows/web.yml) - every day, and when
@@ -179,7 +197,7 @@ Neither needs GitHub: the posts are read through the network, and the files
 can come from any entrance. The releases are also here, as `web-<version>`,
 with the list of checksums to compare by hand.
 
-## A mirror of the releases
+### A mirror of the releases
 
 An entrance can also mirror Unseenet's own releases, so that the portable
 clients and sticks can update over Tor when GitHub is blocked:
@@ -255,16 +273,14 @@ in `src/unseenet_entrance/__init__.py`, commit, then
 
 ## Part of Unseenet
 
-Unseenet is made in several repositories, each released on its own:
-
 | Repository | What it is |
 |---|---|
 | [unseenet](https://github.com/unseenet/unseenet) | The protocol (UN-RFCs), the core library, the node and the command-line client |
-| [unseenet-tui](https://github.com/unseenet/unseenet-tui) | The terminal client (moving here from unseenet, unseenet#548) |
+| [unseenet-tui](https://github.com/unseenet/unseenet-tui) | The terminal client |
 | [unseenet-gui](https://github.com/unseenet/unseenet-gui) | The graphical client - in a window, booted, or in a browser |
-| [unseenet-portable](https://github.com/unseenet/unseenet-portable) | Builds the portable clients, Terminal and Graphical, with Tor inside (unseenet#549) |
-| [unseenet-bootable](https://github.com/unseenet/unseenet-bootable) | Builds the bootable images, Terminal and Graphical, and later a node image (unseenet#550) |
-| [unseenet-docs](https://github.com/unseenet/unseenet-docs) | The site [unseenet.org](https://unseenet.org), gathering the docs of every repository (unseenet#547) |
+| [unseenet-portable](https://github.com/unseenet/unseenet-portable) | Builds the portable clients, Terminal and Graphical, with Tor inside |
+| [unseenet-bootable](https://github.com/unseenet/unseenet-bootable) | Builds the bootable images, Terminal and Graphical |
+| [unseenet-docs](https://github.com/unseenet/unseenet-docs) | The site [unseenet.org](https://unseenet.org) |
 | [unseenet-entrance](https://github.com/unseenet/unseenet-entrance) | Web entrances: the graphical client in an ordinary browser |
 | [unseenet-gateway](https://github.com/unseenet/unseenet-gateway) | Gateways to other networks: Usenet, Nostr, Matrix |
 | [unseenet-bots](https://github.com/unseenet/unseenet-bots) | Bots that keep channels filled with current content |
@@ -275,5 +291,4 @@ Unseenet is made in several repositories, each released on its own:
 
 ## License
 
-Apache-2.0. `js/vendor/noble.js` bundles MIT-licensed code, see
-[js/vendor/README.md](js/vendor/README.md).
+[Apache License 2.0](LICENSE). The Unseenet logo: CC BY 4.0.
