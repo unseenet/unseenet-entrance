@@ -2,7 +2,7 @@
 
 An entrance lets people into Unseenet from the open web. It carries their
 connections; it does not store what they write. That is a different role from
-a [node's](../node/responsibility.md), and worth thinking about before you
+a [node's](https://unseenet.org/node/responsibility/), and worth thinking about before you
 open one to strangers.
 
 ## What the entrance does to make this easier
@@ -23,7 +23,7 @@ open one to strangers.
 
 - **You see visitors' IP addresses**, for as long as they are connected. That
   is the price of the open web, and visitors are told it (the bar at the top,
-  and [What you give up](../web.md#what-you-give-up)). Do not add logging,
+  and [What you give up](https://unseenet.org/web/#what-you-give-up)). Do not add logging,
   analytics or a CDN in front: they would keep what the entrance is built not
   to keep.
 - **You serve code.** The web client you serve is the project's signed
@@ -37,6 +37,6 @@ open one to strangers.
   responsibility.
 - **Problems with what people post** belong to the nodes that carry it, the
   groups' owners and moderators, and the hierarchy maintainers - see
-  [a node's responsibility](../node/responsibility.md). An entrance has no
+  [a node's responsibility](https://unseenet.org/node/responsibility/). An entrance has no
   posts to remove, and by default it tunnels only to the project's list of
   known nodes, which must follow the rules for listed nodes.

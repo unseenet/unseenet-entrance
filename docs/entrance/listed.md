@@ -2,7 +2,7 @@
 
 Web clients and the jump page (`unseenet-entrances.html`) offer the entrances
 on a list the project signs and posts in `unseenet.entrances`
-([UN-RFC 0043](../spec/un-rfc-0043.md) section 8.1). The more entrances run
+([UN-RFC 0043](https://unseenet.org/spec/un-rfc-0043/) section 8.1). The more entrances run
 by different people, in different places, the harder it is to keep anyone out
 of Unseenet. The list says who is known, not who is safe: no one can see
 whether an entrance keeps logs, so it is only as good as the promise of

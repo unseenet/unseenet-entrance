@@ -1,0 +1,31 @@
+# The docs of the web entrance, to preview alone (mkdocs serve) and to check strictly in
+# pull requests. On unseenet.org they are gathered by unseenet/unseenet-docs
+# (sources.yml), at the same addresses; links to pages elsewhere are full
+# unseenet.org addresses.
+site_name: Unseenet - the web entrance
+site_url: https://unseenet.org/
+repo_url: https://github.com/unseenet/unseenet-entrance
+theme:
+  name: material
+  font: false
+nav:
+  - What it is, and installation: entrance/index.md
+  - Settings: entrance/settings.md
+  - Certificates: entrance/certificates.md
+  - New versions, the mirror and blocking: entrance/updates.md
+  - Being listed: entrance/listed.md
+  - Your responsibility: entrance/responsibility.md
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.tabbed:
+      alternate_style: true

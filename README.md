@@ -145,7 +145,7 @@ the entrance about 100 KB of memory; for a very busy entrance, TLS ended by
 Caddy or HAProxy **on the same machine** (`TLS=none`, the entrance on
 127.0.0.1, `ENTRANCE_TRUST_FORWARDED=1`, and that proxy's logs off) brings it
 to about 36 KB - allowed by section 5, but one more program to keep quiet. Certificates:
-[docs/certificates.md](docs/certificates.md). To have your entrance in the
+[Certificates](https://unseenet.org/entrance/certificates/). To have your entrance in the
 signed list that apps and the jump page use, open an
 [Add my entrance](https://github.com/unseenet/unseenet/issues/new?template=add-entrance.yml)
 issue: a check reaches it over HTTPS and its onion, compares the client it

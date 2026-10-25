@@ -1,15 +1,15 @@
 # Running an entrance
 
-A **web entrance** ([UN-RFC 0043](../spec/un-rfc-0043.md)) lets an ordinary
+A **web entrance** ([UN-RFC 0043](https://unseenet.org/spec/un-rfc-0043/)) lets an ordinary
 browser into Unseenet: anyone who opens its address gets the
-[graphical client](../graphical.md), running in their own browser, with their
+[graphical client](https://unseenet.org/graphical/), running in their own browser, with their
 keys kept there. The entrance serves the client and carries its connections to
 the nodes over Tor. It cannot read, change or forge anything: it only moves
 bytes.
 
 Every entrance that someone else runs makes Unseenet harder to block, so this
 is one of the most useful things you can do for the network besides
-[running a node](../node/install.md). The code is
+[running a node](https://unseenet.org/node/install/). The code is
 [unseenet-entrance](https://github.com/unseenet/unseenet-entrance).
 
 !!! warning "Pre-alpha"
