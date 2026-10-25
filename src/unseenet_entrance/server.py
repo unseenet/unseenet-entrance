@@ -67,7 +67,7 @@ class Config:
     max_sessions: int = 16                   # sessions per visitor (UN-RFC 0043 4.2, #21)
     max_total: int = 300                     # open tunnels in all
     trust_forwarded: bool = False            # behind a local reverse proxy / tunnel
-    tls_cert: Path | None = None             # HTTPS on ``port`` when set (docs/certificates.md)
+    tls_cert: Path | None = None             # HTTPS on ``port`` when set (docs/entrance/certificates.md)
     tls_key: Path | None = None
     http_port: int = 0                       # plain HTTP: ACME challenges and a redirect to HTTPS
     acme_dir: Path | None = None             # where certbot --webroot puts its challenges
