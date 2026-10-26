@@ -300,6 +300,26 @@ FILE_MODULES = [JS / "vendor" / "noble.js", JS / "encoding.js", JS / "article.js
                 JS / "releases.js"]
 
 
+def gui_scripts(static: Path) -> list[str]:
+    """The GUI's own scripts, in the order its index.html loads them (unseenet-gui#152
+    splits app.js into several): the names under /static/, app.js if none are found."""
+    import re
+    html = (static / "index.html").read_text() if (static / "index.html").exists() else ""
+    names = re.findall(r'<script\s+src="/static/([^"]+)"', html)
+    return names or ["app.js"]
+
+
+def inline_scripts(static: Path, icon) -> str:
+    """Every GUI script, in order, its icon paths made data: URLs, for one file (#50)."""
+    out = []
+    for name in gui_scripts(static):
+        js = (static / name).read_text()
+        for n in ("icon.svg", "icon-ink.svg"):
+            js = js.replace(f'"/static/{n}"', json.dumps(icon(n)))
+        out.append(f"// --- {name} ---\n{js}")
+    return "\n".join(out)
+
+
 def build_file(bundle_from: str, owner: str | None, group: str | None) -> Path:
     """One HTML file: the GUI page, Pyodide, the core and the signed list of
     entrances. Opened from disk, it uses an entrance only as a tunnel."""
@@ -310,9 +330,7 @@ def build_file(bundle_from: str, owner: str | None, group: str | None) -> Path:
         sys.exit(f"{bundle_from} has no copy of the list of entrances yet")
     static = WEB / "static"
     icon = lambda n: "data:image/svg+xml;base64," + base64.b64encode((static / n).read_bytes()).decode()  # noqa: E731
-    app_js = (static / "app.js").read_text()
-    for n in ("icon.svg", "icon-ink.svg"):
-        app_js = app_js.replace(f'"/static/{n}"', json.dumps(icon(n)))
+    app_js = inline_scripts(static, icon)          # every script index.html loads (#50)
     safe = lambda s: s.replace("</script", "<\\/script")            # noqa: E731
     modules = bundle_modules(FILE_MODULES).replace("import.meta.url", "self.location.href")
     files = {p.name: p for p in sorted((WEB / "pyodide").iterdir()) if p.is_file()}

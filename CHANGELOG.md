@@ -9,6 +9,11 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **The offline file carries every GUI script** (#50): `unseenet-web.html`
+  inlined only `app.js`, so what lives in `identity.js`, `notify.js`, `publish.js`
+  and `export.js` was missing there; now every `<script src="/static/...">` of
+  the GUI's `index.html` is inlined, in its order.
+
 ## [0.2.0] - 2026-10-25
 
 For unseenet 0.5 (`unseenet>=0.5,<0.6`); update the nodes first. One Tor circuit and limits per session (UN-RFC 0043 4.1.1, 4.2), the browser's own Tor used when it has one, the web client served compressed and ripening its own keys, and *Add my entrance*.
