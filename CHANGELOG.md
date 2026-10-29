@@ -9,6 +9,9 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **The web client is built from core 0.6.2**: a key copied into a browser brings its
+  ripening and shows its level at once (UN-RFC 0050 3.6 as amended).
+
 ## [0.3.1] - 2026-10-29
 
 ### Fixed
