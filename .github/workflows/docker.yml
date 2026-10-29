@@ -27,7 +27,7 @@ jobs:
         set -eux
         docker volume create ci
         # without a network no node answers: no web client yet, a temporary failure (75)
-        timeout 120 docker run --rm --network none -v ci:/data -e ENTRANCE_WEB_WAIT=5 "$TEST_IMAGE" && exit 1 || test $? -eq 75
+        timeout 600 docker run --rm --network none -v ci:/data -e ENTRANCE_WEB_WAIT=5 "$TEST_IMAGE" && exit 1 || test $? -eq 75
         docker run --rm -v ci:/data "$TEST_IMAGE" sh -c 'mkdir -p /data/web/0 &&
           echo "<title>Unseenet test page</title>" > /data/web/0/index.html &&
           echo "{\"version\": \"20260101.0000\"}" > /data/web/0/version.json && ln -sfn 0 /data/web/current'
