@@ -9,6 +9,7 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **The web client is built from core 0.6.3** (a used copy code says so).
 - **No mixed-content error in the console** (#62): from an https page, the web client
   asked the entrance's onion address over http:// to see whether this browser has Tor.
   Chrome and Edge block that as mixed content and cannot reach .onion anyway; they are
@@ -20,10 +21,8 @@ in `unseenet.releases`); this file is about the entrance that serves it.
   is one slim line - *Open web* (or *Through Tor*), *Why?* and Save vault; the rest of
   the sentence and *Other entrances* are in *Why?*. It stays visible on every screen
   (UN-RFC 0043 6.1).
-
 - **The web client is built from unseenet-gui 0.3.1**: a tab bar on phones, Back that goes
   up one level instead of leaving the page, and a QR code that can be scanned.
-
 - **The web client is built from core 0.6.2**: a key copied into a browser brings its
   ripening and shows its level at once (UN-RFC 0050 3.6 as amended).
 
