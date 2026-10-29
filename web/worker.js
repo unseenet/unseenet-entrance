@@ -60,7 +60,8 @@ async function start(init) {
   initMessage = init;
   const py = await pyodide(init);
   status("Loading the Unseenet core ...");
-  await py.loadPackage(["pynacl", "aiohttp", "chiavdf"], { messageCallback: () => {} });
+  await py.loadPackage(["pynacl", "aiohttp", "cryptography", "pillow", "chiavdf"],
+                       { messageCallback: () => {} });   // as PYODIDE_PACKAGES in tools/build_web.py
   let bundle = init.files && init.files["bundle.zip"];
   if (!bundle) bundle = await (await fetch(new URL("./py/bundle.zip", HERE))).arrayBuffer();
   py.unpackArchive(bundle, "zip", { extractDir: "/app" });

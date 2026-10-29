@@ -46,7 +46,8 @@ PYODIDE_VERSION = "314.0.7"
 PYODIDE_URL = f"https://cdn.jsdelivr.net/pyodide/v{PYODIDE_VERSION}/full/"
 PYODIDE_CORE = ["pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.zip",
                 "pyodide-lock.json"]
-PYODIDE_PACKAGES = ["pynacl", "aiohttp"]          # with their dependencies, from the lock file
+# with their dependencies, from the lock file; worker.js loads the same
+PYODIDE_PACKAGES = ["pynacl", "aiohttp", "cryptography", "pillow"]
 
 # chiavdf for Pyodide, for key ripening (UN-RFC 0025): made by tools/chiavdf and
 # the chiavdf workflow, released here. Added to Pyodide's lock file, so the
@@ -69,7 +70,31 @@ WHEELS = [
      "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a", ["markdown_it"]),
     ("https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl",
      "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", ["mdurl"]),
+    # copying an identity (UN-RFC 0050 3.4); needs cryptography, from Pyodide
+    ("https://files.pythonhosted.org/packages/d2/42/a4e93badf46c20d862ce298d8873451e19f18141c6811ae7fdfaef0ea107/spake2-0.9-py3-none-any.whl",
+     "2d7cbe936519c4172866649ddceefdec08e3d9b3ce4c8a75bbf84d6bdd07a2fb", ["spake2"]),
 ]
+
+# How each of the core's dependencies comes into the page. A new one fails the build
+# until it is placed here (29 Oct 2026: spake2 and Pillow were missing, so copying an
+# identity and pictures failed in the browser with ModuleNotFoundError).
+CORE_DEPENDENCIES = {
+    "pynacl": "pyodide", "python-socks": "wheel", "markdown-it-py": "wheel",
+    "pillow": "pyodide", "spake2": "wheel", "chiavdf": "chiavdf",
+    "certifi": "not needed",    # HTTPS for the client's own updates; a page has the browser's
+}
+
+
+def check_core_dependencies(core: Path) -> None:
+    """Every dependency of the core is in the page, or said not to be needed."""
+    import re
+    import tomllib
+    deps = tomllib.loads((core / "pyproject.toml").read_text())["project"]["dependencies"]
+    names = {re.split(r"[\s<>=!~;\[]", d, maxsplit=1)[0].lower() for d in deps}
+    missing = sorted(names - set(CORE_DEPENDENCIES))
+    if missing:
+        raise SystemExit(f"the core needs {', '.join(missing)}, which the web client does not "
+                         "carry: add it to WHEELS or PYODIDE_PACKAGES and to CORE_DEPENDENCIES")
 
 REPOS = {"core": "https://github.com/unseenet/unseenet.git",
          "gui": "https://github.com/unseenet/unseenet-gui.git"}
@@ -388,6 +413,7 @@ def main() -> None:
         build_page(gui, args.list_owner, args.list_group, args.releases_group)
         # lib.js: checking signed lists in the page (the same code as the jump page)
         (WEB / "lib.js").write_text(bundle_modules(FILE_MODULES).replace("import.meta.url", "self.location.href"))
+        check_core_dependencies(core)
         build_pyodide()
         build_bundle(core, gui)
         version = args.version or time.strftime("%Y%m%d.%H%M", time.gmtime())
