@@ -533,11 +533,14 @@
   function updateBar() {
     if (!bar) return;
     bar.classList.toggle("uw-tor", torNow());
-    bar.querySelector(".uw-text").textContent = viaTor
-      ? `Through Tor${entrance ? ", via " + entrance.name : ""} - the entrance cannot see your address.`
-      : entrance
-      ? `Open web, through ${entrance.name} - it can see your IP address.`
-      : onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address.";
+    // short first, the rest hidden on a phone (entrance.css): one slim line there
+    const [short, long] = viaTor ? ["Through Tor", `${entrance ? ", via " + entrance.name : ""} - the entrance cannot see your address.`]
+      : entrance ? ["Open web", `, through ${entrance.name} - it can see your IP address.`]
+      : onion ? ["Tor Browser", " - the entrance cannot see your address."]
+      : ["Open web", " - the entrance can see your IP address."];
+    const text = bar.querySelector(".uw-text");
+    text.replaceChildren(short, el("span", { class: "uw-long" }, long));
+    text.title = short + long;
     const unlocked = typeof S !== "undefined" && S.state && S.state.unlocked;
     bar.querySelector(".uw-open").hidden = !!unlocked || kept;
     const keep = bar.querySelector(".uw-keep");
@@ -644,6 +647,7 @@
         "Your vault lives only in this tab. Save it as a file to use it again, or keep it on this device. If you need to hide that you use Unseenet, or who you are, use the real client from unseenet.org."),
       el("p", {}, keptVersion ? `Version ${keptVersion.version}, ${keptVersion.signed ? "signed - every file checked" : "a test build, not signed"}, kept on this device.`
         : (ownWeb ? `Version ${ownWeb}, from this entrance.` : "")),
+      ...(FILE ? [] : [el("p", {}, el("button", { class: "uw-btn", on: { onclick: () => { d.close(); entrancesDialog(); } } }, "Other entrances"))]),
       el("p", {}, "If this entrance is ever blocked: ",
         el("a", { href: (FILE && entrance ? entrance.url : "/") + "unseenet-entrances.html", download: "unseenet-entrances.html" }, "save the list of entrances"),
         " - a small file that finds another one, from your own disk. Send it to friends too."),
@@ -660,7 +664,7 @@
       el("span", { class: "uw-text" }, onion ? "Tor Browser - the entrance cannot see your address." : "Open web - the entrance can see your IP address."),
       el("button", { class: "uw-link", on: { onclick: aboutDialog } }, window.matchMedia("(max-width: 760px)").matches ? "Why?" : "What does that mean?"),
       FILE ? el("button", { class: "uw-link", on: { onclick: () => { if (!(vaultDirty || ripenUnsaved) || confirm("Your vault has changes you have not saved. Leave anyway?")) location.reload(); } } }, "Another entrance")
-        : el("button", { class: "uw-link", on: { onclick: entrancesDialog } }, "Other entrances"),
+        : el("button", { class: "uw-link uw-entrances", on: { onclick: entrancesDialog } }, "Other entrances"),
       el("button", { class: "uw-link uw-warn uw-swwarn", hidden: "", on: { onclick: () => alert(
         "This entrance now serves a service worker - the part of the app that the browser fetches by itself - " +
         "that is not in any signed version. It could change what runs here. Unless the entrance's operator says why, " +

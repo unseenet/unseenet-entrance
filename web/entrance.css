@@ -1,6 +1,9 @@
 /* The open-web bar and loading screen around the graphical client (UN-RFC 0043 6.1). */
-html.uw body { display: flex; flex-direction: column; }
+html.uw body { display: flex; flex-direction: column; height: 100dvh; }
 html.uw #root { flex: 1; min-height: 0; height: auto; }
+/* the app fills what the bar leaves, not the whole screen: on a phone the GUI's own
+   100dvh pushed its tab bar below the edge */
+html.uw #root > .app { height: 100%; }
 .uw-bar { flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 5px 14px; background: #f5c26b; color: #2b1d00; font: 600 13px/1.4 ui-sans-serif, system-ui, sans-serif; }
 .uw-bar.uw-tor { background: #7d4698; color: #fff; }
@@ -26,10 +29,14 @@ html.uw #root { flex: 1; min-height: 0; height: auto; }
 .uw-dialog h3 { font-size: 15px; margin: 18px 0 4px; }
 .uw-dialog td .uw-btn { padding: 2px 10px; }
 .uw-dialog a.uw-btn { text-decoration: none; display: inline-block; }
-@media (max-width: 760px) {        /* phones: the notice on one slim line, the buttons below */
-  .uw-bar { font-size: 12px; padding: 4px 10px; gap: 4px 10px; flex-wrap: wrap; }
-  .uw-text { flex: 1 1 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .uw-grow, .uw-bar a.uw-link { display: none; }
+@media (max-width: 760px) {        /* phones: one slim line - who can see you, Why?, and Save */
+  .uw-bar { font-size: 12px; padding: 3px 10px; gap: 8px; flex-wrap: nowrap;
+    padding-top: max(3px, env(safe-area-inset-top)); }
+  .uw-text { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .uw-text .uw-long { display: none; }
+  .uw-grow { display: block; }
+  .uw-bar a.uw-link, .uw-bar .uw-entrances { display: none; }      /* in Why? */
+  .uw-bar .uw-btn { padding: 4px 8px; }
   .uw-dialog { padding: 14px; }
   .uw-dialog th, .uw-dialog td { padding: 5px 3px; }
   .uw-link { white-space: nowrap; }
