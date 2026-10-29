@@ -16,7 +16,8 @@ in `unseenet.releases`); this file is about the entrance that serves it.
   its limits, closed after ten minutes and 2 MiB each way. The entrance sees SPAKE2
   messages and ciphertext only. On by default, `ENTRANCE_COPY=off` to stop it, and
   `/.well-known/unseenet-entrance` says `"copy": true` or `false`, so clients only offer it
-  where it works.
+  where it works. The web client's transport (`web/py/webtransport.py`) sends the copy
+  there instead of to Tor.
 
 ### Fixed
 

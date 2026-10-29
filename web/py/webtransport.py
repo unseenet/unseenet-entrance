@@ -48,10 +48,22 @@ class WSWriter:
 
 async def open_connection(address, socks_port=None):
     host = address.rpartition(":")[0] or address
+    return await _open(f"{ENTRANCE}?node={host}&session={SESSION}" if SESSION
+                       else f"{ENTRANCE}?node={host}")
+
+
+async def open_copy(onion):
+    """The connection to another device's one-time onion address, to receive a copy of an
+    identity (UN-RFC 0050 3.8): through the entrance's /copy (UN-RFC 0043 4.5), which
+    carries it to port 9119 - SPAKE2 and ciphertext only."""
+    base = ENTRANCE.rsplit("/onntp", 1)[0]
+    return await _open(f"{base}/copy?onion={onion}&session={SESSION}")
+
+
+async def _open(url):
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader(limit=2 ** 20)
-    ws = WebSocket.new(f"{ENTRANCE}?node={host}&session={SESSION}" if SESSION
-                       else f"{ENTRANCE}?node={host}")
+    ws = WebSocket.new(url)
     ws.binaryType = "arraybuffer"
     opened = loop.create_future()
 
@@ -84,6 +96,16 @@ def install(entrance_url):
     from unseenet import nntp
     tor.open_connection = open_connection
     nntp.tor.open_connection = open_connection
+    # the copy of an identity goes through /copy, not Tor (UN-RFC 0043 4.5)
+    from unseenet.client.session import copying, SessionError
+
+    async def _copy_open(self, onion):
+        try:
+            return await open_copy(onion)
+        except (OSError, ConnectionError) as exc:
+            raise SessionError(f"The other device could not be reached through this "
+                               f"entrance: {exc}") from exc
+    copying.CopyingMixin._copy_open = _copy_open
 
 
 def switch(entrance_url):
