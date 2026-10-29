@@ -137,8 +137,19 @@
   // WebSockets, unseenet/unseenet#259 - not yet.)
   let viaTor = false, torBase = null;
   const torNow = () => onion || viaTor;
+  // Whether an http:// onion address can be asked from this page at all (#62). Tor
+  // Browser, Onion Browser and Brave count .onion as secure; other Chromium browsers do
+  // not, and cannot reach .onion anyway - from an https page they only block the request
+  // as mixed content, noise in the console and nothing found.
+  function onionAskable() {
+    if (location.protocol !== "https:") return true;
+    const ua = navigator.userAgent || "";
+    const chromium = /Chrome\/|Chromium\/|Edg\//.test(ua) && !/Firefox\//.test(ua);
+    return !chromium || !!navigator.brave;
+  }
   async function torTunnel(base) {
     if (onion) return null;                       // already on the entrance's onion
+    if (!onionAskable()) return null;             // this browser has no Tor (#62)
     let info;
     try { info = await getJSON(new URL(".well-known/unseenet-entrance", base).href, 6000); }
     catch { return null; }
