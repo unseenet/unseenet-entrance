@@ -18,6 +18,9 @@ in `unseenet.releases`); this file is about the entrance that serves it.
   so both failed with `ModuleNotFoundError`. `spake2` is bundled; `cryptography` and
   `pillow` come from Pyodide. The build now stops when the core needs something the page
   does not carry (`CORE_DEPENDENCIES` in `tools/build_web.py`).
+- **A copy waits for the other device** (#58): the lookup uses the code up, and the
+  other device's one-time onion service can take a minute to be found; `/copy` gave it
+  7 seconds and now about 90.
 
 ## [0.3.0] - 2026-10-29
 
