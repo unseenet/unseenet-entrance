@@ -9,6 +9,14 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Copying and pictures work in the browser** (unseenet-gui#234): the web client lacked
+  the core's `spake2` (copying an identity, UN-RFC 0050) and Pillow (pictures on posts),
+  so both failed with `ModuleNotFoundError`. `spake2` is bundled; `cryptography` and
+  `pillow` come from Pyodide. The build now stops when the core needs something the page
+  does not carry (`CORE_DEPENDENCIES` in `tools/build_web.py`).
+
 ## [0.3.0] - 2026-10-29
 
 **On unseenet 0.6 (`unseenet>=0.6,<0.7`), and a web client built from core 0.6.1 and
