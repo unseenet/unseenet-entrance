@@ -16,7 +16,7 @@ ONION = "a" * 56 + ".onion"
 
 @pytest_asyncio.fixture
 async def setup(monkeypatch, tmp_path):
-    ports = []
+    ports, pauses = [], []
 
     async def echo(reader, writer):
         while data := await reader.read(65536):
@@ -28,12 +28,14 @@ async def setup(monkeypatch, tmp_path):
 
     async def fake_tunnel(cfg, onion, credentials=None, port_=srv.ONNTP_PORT, **kw):
         ports.append(kw.get("port", port_))
+        pauses.append(kw.get("pauses"))
         return await asyncio.open_connection("127.0.0.1", port)
     monkeypatch.setattr(srv, "open_tunnel", fake_tunnel)
     cfg = srv.Config(nodes="any", web_dir=tmp_path)
     app = srv.make_app(cfg)
     client = TestClient(TestServer(app))
     await client.start_server()
+    client.pauses = pauses
     yield client, cfg, ports
     await client.close()
     device.close()
@@ -101,3 +103,32 @@ async def test_the_operator_can_turn_it_off_and_it_is_said(setup, monkeypatch):
     monkeypatch.setenv("ENTRANCE_COPY", "off")
     off = srv.Config.from_env()
     assert off.copy is False and off.info["copy"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_copy_waits_for_a_fresh_onion_service(setup):
+    """The code is used up by the lookup, so the copy must wait for the other device's
+    one-time onion service (a minute or more for its descriptor) - nodes need not."""
+    client, cfg, ports = setup
+    ws = await client.ws_connect(f"/copy?onion={ONION}&session={tag()}")
+    await ws.close()
+    assert client.pauses == [srv.COPY_PAUSES] and sum(srv.COPY_PAUSES) >= 80
+
+
+@pytest.mark.asyncio
+async def test_open_tunnel_tries_again_after_each_pause(monkeypatch):
+    from python_socks import ProxyError
+    tries, slept = [], []
+
+    class P:
+        async def connect(self, **kw):
+            tries.append(kw)
+            raise ProxyError("host unreachable")
+    monkeypatch.setattr(srv.Proxy, "from_url", staticmethod(lambda *a, **k: P()))
+
+    async def no_sleep(s):
+        slept.append(s)
+    monkeypatch.setattr(srv.asyncio, "sleep", no_sleep)
+    with pytest.raises(ProxyError):
+        await srv.open_tunnel(srv.Config(), ONION, port=9119, pauses=(1, 2, 3))
+    assert len(tries) == 4 and slept == [1, 2, 3]

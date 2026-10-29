@@ -52,6 +52,11 @@ LIMIT_WINDOW = 3600           # seconds a counter is kept, at most (UN-RFC 0043 
 COPY_PORT = 9119              # the old device's one-time onion service (UN-RFC 0050 3.9)
 COPY_SECONDS = 600            # a copy's connection lives at most this long (UN-RFC 0043 4.5)
 COPY_BYTES = 2 * 1024 * 1024  # ... and carries at most this much each way
+# The other device's onion service is minutes old at most: its descriptor can take a
+# minute or more to be found, and the code is used up by the lookup (UN-RFC 0050 3.3),
+# so the copy waits about 90 seconds before giving up - nodes need not.
+COPY_PAUSES = (2, 5, 10, 15, 20, 30)
+TUNNEL_PAUSES = (2, 5)
 
 log = logging.getLogger("unseenet-entrance")
 
@@ -255,14 +260,15 @@ def visitor_key(address: str, local_port: int | None, cfg: "Config", session: st
 
 
 async def open_tunnel(cfg: Config, onion: str, credentials: tuple[str, str] | None = None,
-                      port: int = ONNTP_PORT) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+                      port: int = ONNTP_PORT, pauses: tuple[int, ...] | None = None
+                      ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """A stream to ``onion:119`` over Tor. Tor keeps streams with other SOCKS
     credentials on other circuits: ``credentials`` from ``Limits.credentials`` (one
     circuit per session, UN-RFC 0043 4.1.1), or random ones - a circuit of its own."""
     user, password = credentials or (secrets.token_hex(16), secrets.token_hex(16))
     proxy = Proxy.from_url(f"socks5://{user}:{password}@{cfg.socks_host}:{cfg.socks_port}",
                            rdns=True)
-    for pause in (2, 5, None):            # a fresh descriptor can take a moment
+    for pause in (*(TUNNEL_PAUSES if pauses is None else pauses), None):  # a fresh descriptor
         try:
             sock = await proxy.connect(dest_host=onion, dest_port=port, timeout=60)
             return await asyncio.open_connection(sock=sock, limit=CHUNK * 2)
@@ -362,7 +368,7 @@ async def copy_tunnel(request: web.Request) -> web.StreamResponse:
         await ws.prepare(request)
         try:
             reader, writer = await open_tunnel(cfg, onion, limits.credentials(visitor, session),
-                                               port=COPY_PORT)
+                                               port=COPY_PORT, pauses=COPY_PAUSES)
         except (ProxyError, OSError, asyncio.TimeoutError):
             await ws.close(code=4004, message=b"the other device is unreachable over Tor")
             return ws
