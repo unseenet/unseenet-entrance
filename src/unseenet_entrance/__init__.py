@@ -1,3 +1,3 @@
 """unseenet-entrance: a web entrance to Unseenet (UN-RFC 0043)."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"

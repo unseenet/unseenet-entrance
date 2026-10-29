@@ -9,6 +9,8 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-29
+
 ### Fixed
 
 - **Copying and pictures work in the browser** (unseenet-gui#234): the web client lacked
@@ -168,7 +170,8 @@ nodes (unseenet-gui#31).
 - Release articles go through the core's `Session` and never ripen in CI:
   they take over the key's published chain (#17).
 
-[Unreleased]: https://github.com/unseenet/unseenet-entrance/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/unseenet/unseenet-entrance/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/unseenet/unseenet-entrance/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/unseenet/unseenet-entrance/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/unseenet/unseenet-entrance/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/unseenet/unseenet-entrance/releases/tag/v0.1.0
