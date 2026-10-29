@@ -9,6 +9,13 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-29
+
+**On unseenet 0.6 (`unseenet>=0.6,<0.7`), and a web client built from core 0.6.1 and
+unseenet-gui 0.3.0.** A container image for running an entrance anywhere, a phone can get
+its identity from another device through the entrance, and - most important for
+operators already running one - entrances find and install the signed web client again.
+
 - **A container image** (#47, unseenet/unseenet#571): `ghcr.io/unseenet/entrance` - the
   entrance, Tor with an onion address and certbot on the node image; the signed web
   client fetched through the network on the first start, and `TLS=auto`,
@@ -153,6 +160,7 @@ nodes (unseenet-gui#31).
 - Release articles go through the core's `Session` and never ripen in CI:
   they take over the key's published chain (#17).
 
-[Unreleased]: https://github.com/unseenet/unseenet-entrance/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/unseenet/unseenet-entrance/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/unseenet/unseenet-entrance/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/unseenet/unseenet-entrance/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/unseenet/unseenet-entrance/releases/tag/v0.1.0
