@@ -31,11 +31,11 @@ jobs:
         docker run --rm -v ci:/data "$TEST_IMAGE" sh -c 'mkdir -p /data/web/0 &&
           echo "<title>Unseenet test page</title>" > /data/web/0/index.html &&
           echo "{\"version\": \"20260101.0000\"}" > /data/web/0/version.json && ln -sfn 0 /data/web/current'
-        docker run -d --name e -v ci:/data -p 8043:8043 -e ENTRANCE_AUTO_UPDATE=off "$TEST_IMAGE"
+        docker run -d --name entrance-ci -v ci:/data -p 8043:8043 -e ENTRANCE_AUTO_UPDATE=off "$TEST_IMAGE"
         for i in $(seq 1 30); do curl -fs http://127.0.0.1:8043/ | grep -q "test page" && break; sleep 2; done
         curl -fs http://127.0.0.1:8043/ | grep "test page"
-        docker exec e sh -c 'test -s /data/tor/onion/hostname'                   # Tor is up
-        docker exec e /opt/certbot/bin/certbot --version
-        docker exec e ps -o user,args | grep "^unseenet .*unseenet_entrance"      # not root
-        docker logs e
-        docker rm -f e
+        docker exec entrance-ci sh -c 'test -s /data/tor/onion/hostname'                   # Tor is up
+        docker exec entrance-ci /opt/certbot/bin/certbot --version
+        docker exec entrance-ci ps -o user,args | grep "^unseenet .*unseenet_entrance"      # not root
+        docker logs entrance-ci
+        docker rm -f entrance-ci
