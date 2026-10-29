@@ -39,7 +39,7 @@ from python_socks import ProxyError
 from python_socks.async_.asyncio import Proxy
 
 from . import __version__
-from .listfetch import PROJECT_GROUP, RELEASES_GROUP, ListCache, keep_fresh
+from .listfetch import PROJECT_GROUP, RELEASES_GROUP, WEB_RELEASE_SUBJECT, ListCache, keep_fresh
 
 mimetypes.add_type("text/javascript", ".mjs")
 mimetypes.add_type("application/wasm", ".wasm")
@@ -456,7 +456,7 @@ def make_app(cfg: Config) -> web.Application:
     app["limits"] = Limits(cfg.max_per_visitor, cfg.max_total, cfg.max_sessions)
     app["allowed"] = cfg.allowed_nodes()
     app["list"] = ListCache(cfg.list_group)
-    app["releases"] = ListCache(cfg.release_group)
+    app["releases"] = ListCache(cfg.release_group, WEB_RELEASE_SUBJECT)
     from .mirror import Mirror
     app["mirror"] = Mirror(cfg, app["releases"], app["list"])
     app.router.add_get("/onntp", onntp)

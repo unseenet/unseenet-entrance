@@ -28,12 +28,21 @@ log = logging.getLogger("unseenet-entrance")
 PROJECT_GROUP = "unseenet.entrances@ph5fc5hop5232qsz"
 RELEASES_GROUP = "unseenet.releases@ph5fc5hop5232qsz"
 KEEP_POSTS = 5               # the newest few; clients take the newest valid one
+SCAN = 20                    # articles looked at, newest first
+SCAN_FILTERED = 400          # ... when only some subjects count: their headers only (HEAD)
+WEB_RELEASE_SUBJECT = "Web client "   # tools/post_release.py: "Web client <version>"
 REFRESH = 3600
 
 
 class ListCache:
-    def __init__(self, group: str):
+    def __init__(self, group: str, subject: str | None = None):
+        """``subject``: keep only posts whose Subject starts with it. unseenet.releases
+        also carries the portable and bootable builds (unseenet#264), posted every
+        night: without it the newest few were all builds, and the web client's own
+        posts - days older - were never seen, so no entrance could install or
+        update its web client."""
         self.group = group
+        self.subject = subject
         self.manifest: bytes | None = None
         self.posts: list[bytes] = []
         self.fetched: float = 0.0
@@ -65,6 +74,15 @@ async def _block(reader: asyncio.StreamReader, limit: int = 70000) -> bytes:
     return b"\r\n".join(lines) + b"\r\n"
 
 
+def _subject(head: bytes) -> str:
+    """The Subject of a block of headers ("" when it has none)."""
+    for line in head.decode("utf-8", "replace").split("\r\n"):
+        name, _, value = line.partition(":")
+        if name.lower() == "subject":
+            return value.strip()
+    return ""
+
+
 async def fetch_once(cache: ListCache, onion: str, socks_host: str, socks_port: int) -> bool:
     user, password = secrets.token_hex(8), secrets.token_hex(8)
     proxy = Proxy.from_url(f"socks5://{user}:{password}@{socks_host}:{socks_port}", rdns=True)
@@ -85,7 +103,15 @@ async def fetch_once(cache: ListCache, onion: str, socks_host: str, socks_port: 
         posts: list[bytes] = []
         if line.startswith("211"):
             _, count, low, high = line.split()[:4]
-            for n in range(int(high), max(int(low), int(high) - 20) - 1, -1):
+            scan = SCAN_FILTERED if cache.subject else SCAN
+            for n in range(int(high), max(int(low), int(high) - scan) - 1, -1):
+                if cache.subject:
+                    writer.write(f"HEAD {n}\r\n".encode())
+                    await writer.drain()
+                    if not (await _readline(reader)).startswith("221"):
+                        continue
+                    if not _subject(await _block(reader)).startswith(cache.subject):
+                        continue
                 writer.write(f"ARTICLE {n}\r\n".encode())
                 await writer.drain()
                 if (await _readline(reader)).startswith("220"):

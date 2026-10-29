@@ -315,8 +315,8 @@ def adopt(releases_dir: Path, web: Path) -> str:
 
 async def install_newest(cfg, wait: int) -> str | None:
     """Fetch the lists over Tor and install the newest signed version."""
-    from .listfetch import ListCache, fetch_from_any
-    releases, entrances = ListCache(cfg.release_group), ListCache(cfg.list_group)
+    from .listfetch import WEB_RELEASE_SUBJECT, ListCache, fetch_from_any
+    releases, entrances = ListCache(cfg.release_group, WEB_RELEASE_SUBJECT), ListCache(cfg.list_group)
     nodes = sorted(cfg.allowed_nodes() or [])
     deadline = time.time() + wait
     while True:
