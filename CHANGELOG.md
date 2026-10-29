@@ -9,6 +9,16 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Entrances found no signed web client** (found while building the container image):
+  `unseenet.releases` also carries the portable and bootable builds (unseenet#264),
+  posted every night, and the entrance read only the newest five posts - all builds -
+  so the web client's posts, days older, were never seen: a new entrance could not
+  install the web client, and running ones did not update. It now looks at up to 400
+  posts by their headers and keeps the newest five web client posts, which is also what
+  `/.well-known/unseenet-releases.json` gives browsers.
+
 - **The offline file carries every GUI script** (#50): `unseenet-web.html`
   inlined only `app.js`, so what lives in `identity.js`, `notify.js`, `publish.js`
   and `export.js` was missing there; now every `<script src="/static/...">` of
