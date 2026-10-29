@@ -9,6 +9,10 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **The web client is built from unseenet-gui 0.3.3**: on a phone one head everywhere with
+  the round + for its action, a chat line you can see what you write in, Private as on the
+  desktop, one icon for the palette, and a copied key's ripening shown right (gui#256,
+  #259, #260, #262, #263).
 - **The web client is built from core 0.6.4**: a copied or restored identity has its
   own feed and site, rather than *Start your feed* and *Start your site* (unseenet#771).
 - **The web client is built from unseenet-gui 0.3.2**: on a phone every dialog fits (Your
