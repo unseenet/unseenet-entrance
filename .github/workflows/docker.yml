@@ -26,11 +26,12 @@ jobs:
       test: |
         set -eux
         docker volume create ci
-        docker run --rm -v ci:/data -e ENTRANCE_WEB_WAIT=5 "$TEST_IMAGE" && exit 1 || test $? -eq 75   # no web client yet
+        # without a network no node answers: no web client yet, a temporary failure (75)
+        timeout 120 docker run --rm --network none -v ci:/data -e ENTRANCE_WEB_WAIT=5 "$TEST_IMAGE" && exit 1 || test $? -eq 75
         docker run --rm -v ci:/data "$TEST_IMAGE" sh -c 'mkdir -p /data/web/0 &&
           echo "<title>Unseenet test page</title>" > /data/web/0/index.html &&
           echo "{\"version\": \"20260101.0000\"}" > /data/web/0/version.json && ln -sfn 0 /data/web/current'
-        docker run -d --name e -v ci:/data -p 8043:8043 "$TEST_IMAGE"
+        docker run -d --name e -v ci:/data -p 8043:8043 -e ENTRANCE_AUTO_UPDATE=off "$TEST_IMAGE"
         for i in $(seq 1 30); do curl -fs http://127.0.0.1:8043/ | grep -q "test page" && break; sleep 2; done
         curl -fs http://127.0.0.1:8043/ | grep "test page"
         docker exec e sh -c 'test -s /data/tor/onion/hostname'                   # Tor is up
