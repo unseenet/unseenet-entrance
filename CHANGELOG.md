@@ -9,6 +9,13 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **A container image** (#47, unseenet/unseenet#571): `ghcr.io/unseenet/entrance` - the
+  entrance, Tor with an onion address and certbot on the node image; the signed web
+  client fetched through the network on the first start, and `TLS=auto`,
+  `domain:NAME`, `both:NAME` or `none` as for the install script, with renewal in the
+  container. Any `ENTRANCE_*` setting from the environment; everything kept in
+  `/data`, nothing about visitors. A `compose.yaml` (ports 80 and 443, read-only root).
+  Published for amd64 and arm64 only for release tags. See *In Docker* in the docs.
 - **A browser can receive a copy of an identity** (#53, UN-RFC 0043 section 4.5):
   `/copy?onion=<v3>&session=<tag>` relays the one connection a browser client needs to get
   an identity from another device - to that device's one-time onion address on port 9119
