@@ -34,8 +34,8 @@ concurrency:
 env:
   # The releases the web client is built from: the core within the range
   # pyproject.toml asks for, and the graphical client that runs on it.
-  CORE_REF: v0.5.0
-  GUI_REF: v0.2.0
+  CORE_REF: v0.6.1
+  GUI_REF: v0.3.0
 
 jobs:
   web:
