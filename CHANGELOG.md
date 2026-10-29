@@ -9,6 +9,15 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **A browser can receive a copy of an identity** (#53, UN-RFC 0043 section 4.5):
+  `/copy?onion=<v3>&session=<tag>` relays the one connection a browser client needs to get
+  an identity from another device - to that device's one-time onion address on port 9119
+  (UN-RFC 0050 section 3.9), nothing else; at most one per session at a time, counted in
+  its limits, closed after ten minutes and 2 MiB each way. The entrance sees SPAKE2
+  messages and ciphertext only. On by default, `ENTRANCE_COPY=off` to stop it, and
+  `/.well-known/unseenet-entrance` says `"copy": true` or `false`, so clients only offer it
+  where it works.
+
 ### Fixed
 
 - **Entrances found no signed web client** (found while building the container image):

@@ -34,6 +34,7 @@ In `/etc/unseenet-entrance.env`, then `sudo systemctl restart unseenet-entrance`
 | `ENTRANCE_MAX_TOTAL` | Open tunnels in all. `auto` (the default) allows what the available memory and the open-file limit carry, about 120 KB and two open files per tunnel, and prints the number at start; a number overrides it |
 | `ENTRANCE_TRUST_FORWARDED=1` | A reverse proxy on this machine sits in front: count limits per visitor, not per proxy |
 | `ENTRANCE_HOME` | A name that sends visitors on to the entrance's own address |
+| `ENTRANCE_COPY=off` | Do not relay the copy of an identity to a browser (UN-RFC 0043 section 4.5). On by default: a phone in the browser can then get an identity from another device with its code or QR code. The entrance sees only encrypted messages - never the code or the identity - and allows one copy per session, ten minutes and 2 MiB at most |
 
 A visitor uses two tunnels per node (one for requests, one for watching), so
 `ENTRANCE_MAX_TOTAL` is about twice the number of people at once. The unit
