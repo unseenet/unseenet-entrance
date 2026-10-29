@@ -1,0 +1,40 @@
+name: docker
+# ghcr.io/unseenet/entrance (Dockerfile, docs "In Docker"): published for release tags
+# only - never on every merge - through the shared workflow (unseenet/unseenet#571);
+# a pull request that changes the image only builds and tests it (offline: a page
+# served from the volume, Tor's onion address, certbot there).
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths: ["Dockerfile", "docker/**", "compose.yaml", ".github/workflows/docker.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: unseenet/.github/.github/workflows/docker-image.yml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      image: ghcr.io/unseenet/entrance
+      test: |
+        set -eux
+        docker volume create t
+        docker run --rm -v t:/data -e ENTRANCE_WEB_WAIT=5 "$TEST_IMAGE" && exit 1 || test $? -eq 75   # no web client yet
+        docker run --rm -v t:/data "$TEST_IMAGE" sh -c 'mkdir -p /data/web/0 &&
+          echo "<title>Unseenet test page</title>" > /data/web/0/index.html &&
+          echo "{\"version\": \"20260101.0000\"}" > /data/web/0/version.json && ln -sfn 0 /data/web/current'
+        docker run -d --name e -v t:/data -p 8043:8043 "$TEST_IMAGE"
+        for i in $(seq 1 30); do curl -fs http://127.0.0.1:8043/ | grep -q "test page" && break; sleep 2; done
+        curl -fs http://127.0.0.1:8043/ | grep "test page"
+        docker exec e sh -c 'test -s /data/tor/onion/hostname'                   # Tor is up
+        docker exec e /opt/certbot/bin/certbot --version
+        docker exec e ps -o user,args | grep "^unseenet .*unseenet_entrance"      # not root
+        docker logs e
+        docker rm -f e

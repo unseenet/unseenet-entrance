@@ -53,6 +53,35 @@ journal - are in [Settings](settings.md); certificates in more detail in
 entrance's own code (`REF=vX.Y.Z` installs another release); your settings
 are kept.
 
+### In Docker
+
+On any machine with Docker - not only Debian or Ubuntu - `ghcr.io/unseenet/entrance`
+(amd64 and arm64, published for releases only, signed with cosign) does the same:
+
+```sh
+docker run -d --name entrance --restart unless-stopped -v entrance:/data \
+    -p 80:8080 -p 443:8443 -e TLS=auto ghcr.io/unseenet/entrance
+docker logs -f entrance        # the onion address, and where it got to
+```
+
+or with [`compose.yaml`](https://github.com/unseenet/unseenet-entrance/blob/main/compose.yaml)
+(`docker compose up -d`), which also runs it with a read-only root file system
+and no capabilities beyond handing `/data` to its own user. Inside, the
+entrance listens on 8080 and 8443: publish them as 80 and 443.
+
+- `TLS` is as for the install script: `auto` (the public IP address),
+  `domain:NAME`, `both:NAME`, or `none` (plain HTTP on 8043, for your own proxy
+  in front - publish 8043 then). Certificates are renewed in the container.
+- Every setting of [Settings](settings.md) can be given in the environment
+  (`-e ENTRANCE_OPERATOR=...`, `-e ENTRANCE_MIRROR=portable`).
+- The volume keeps the web client, the onion address's keys and the
+  certificates - nothing about visitors. The web client updates itself as
+  on any entrance; a new image updates the entrance's own code
+  (`docker pull`, then start it again).
+- The first start fetches the signed web client through Tor, which can take
+  a few minutes. If no node answers in time it stops with code 75 and a
+  restart policy tries again.
+
 ## Being listed
 
 Apps and the jump page find entrances in a signed list kept by the project

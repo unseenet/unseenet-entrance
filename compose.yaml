@@ -1,0 +1,31 @@
+# A web entrance with Docker Compose (docs: "In Docker").
+#
+#   docker compose up -d          # then: docker compose logs -f entrance
+#
+# TLS=auto asks Let's Encrypt for a certificate for this machine's public IP address:
+# ports 80 and 443 must reach it from the internet. TLS=domain:NAME for a name,
+# TLS=none behind your own proxy (then publish 8043 instead).
+services:
+  entrance:
+    image: ghcr.io/unseenet/entrance:latest
+    restart: unless-stopped
+    ports:
+      - "80:8080"
+      - "443:8443"
+    environment:
+      TLS: auto
+      ENTRANCE_OPERATOR: ""        # who runs it, shown on the page
+      ENTRANCE_CONTACT: ""         # how to reach them (an Unseenet inbox, say)
+      # ENTRANCE_MIRROR: portable  # a mirror of Unseenet's releases (README.md)
+    volumes:
+      - entrance:/data             # the web client, the onion keys, the certificates
+    read_only: true
+    tmpfs: [/tmp]
+    ulimits:
+      nofile: 65536                # two open files per tunnel
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  entrance:
