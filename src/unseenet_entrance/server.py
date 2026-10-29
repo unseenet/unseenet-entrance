@@ -49,6 +49,9 @@ ONION_RE = re.compile(r"^[a-z2-7]{56}\.onion$")
 ONNTP_PORT = 119
 CHUNK = 65536
 LIMIT_WINDOW = 3600           # seconds a counter is kept, at most (UN-RFC 0043 4.2)
+COPY_PORT = 9119              # the old device's one-time onion service (UN-RFC 0050 3.9)
+COPY_SECONDS = 600            # a copy's connection lives at most this long (UN-RFC 0043 4.5)
+COPY_BYTES = 2 * 1024 * 1024  # ... and carries at most this much each way
 
 log = logging.getLogger("unseenet-entrance")
 
@@ -63,6 +66,7 @@ class Config:
     nodes: str = "known"                     # "known" or "any" (UN-RFC 0043 4.1)
     nodes_file: Path = Path(__file__).resolve().parent / "nodes.json"
     extra_nodes: list[str] = field(default_factory=list)
+    copy: bool = True                        # relay the copy of an identity (UN-RFC 0043 4.5)
     max_per_visitor: int = 64                # open tunnels per visitor, a cap per session's worth
     max_sessions: int = 16                   # sessions per visitor (UN-RFC 0043 4.2, #21)
     max_total: int = 300                     # open tunnels in all
@@ -103,6 +107,7 @@ class Config:
         total = e("ENTRANCE_MAX_TOTAL", "auto").strip().lower()
         c.max_total = auto_max_total()[0] if total == "auto" else int(total)
         c.trust_forwarded = e("ENTRANCE_TRUST_FORWARDED", "") in ("1", "yes", "true")
+        c.copy = e("ENTRANCE_COPY", "on").strip().lower() not in ("off", "no", "0", "false")
         if e("ENTRANCE_TLS_CERT") and e("ENTRANCE_TLS_KEY"):
             c.tls_cert, c.tls_key = Path(e("ENTRANCE_TLS_CERT")), Path(e("ENTRANCE_TLS_KEY"))
         c.http_port = int(e("ENTRANCE_HTTP_PORT", c.http_port))
@@ -130,6 +135,7 @@ class Config:
             "onion": e("ENTRANCE_ONION", ""),
             "nodes": c.nodes,
             "statement": e("ENTRANCE_STATEMENT", "memory only, no logs, no third-party proxy"),
+            "copy": c.copy,                  # UN-RFC 0043 4.3, 4.5
             "software": f"unseenet-entrance {__version__}",
         }
         claim = e("ENTRANCE_CLAIM", "").strip()
@@ -248,8 +254,8 @@ def visitor_key(address: str, local_port: int | None, cfg: "Config", session: st
     return address
 
 
-async def open_tunnel(cfg: Config, onion: str, credentials: tuple[str, str] | None = None
-                      ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+async def open_tunnel(cfg: Config, onion: str, credentials: tuple[str, str] | None = None,
+                      port: int = ONNTP_PORT) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """A stream to ``onion:119`` over Tor. Tor keeps streams with other SOCKS
     credentials on other circuits: ``credentials`` from ``Limits.credentials`` (one
     circuit per session, UN-RFC 0043 4.1.1), or random ones - a circuit of its own."""
@@ -258,7 +264,7 @@ async def open_tunnel(cfg: Config, onion: str, credentials: tuple[str, str] | No
                            rdns=True)
     for pause in (2, 5, None):            # a fresh descriptor can take a moment
         try:
-            sock = await proxy.connect(dest_host=onion, dest_port=ONNTP_PORT, timeout=60)
+            sock = await proxy.connect(dest_host=onion, dest_port=port, timeout=60)
             return await asyncio.open_connection(sock=sock, limit=CHUNK * 2)
         except ProxyError:
             if pause is None:
@@ -324,6 +330,80 @@ async def onntp(request: web.Request) -> web.StreamResponse:
         limits.give(tag)
 
 
+async def copy_tunnel(request: web.Request) -> web.StreamResponse:
+    """``/copy?onion=<v3>&session=<tag>`` (UN-RFC 0043 section 4.5): the one connection a
+    browser client needs to receive a copy of an identity from another device - to its
+    one-time onion address on port 9119 (UN-RFC 0050 section 3.9), nothing else. At most
+    one per session at a time, counted in the session's limits, closed after ten minutes
+    and two MiB each way. What passes is SPAKE2 and ciphertext; nothing is read or kept."""
+    cfg: Config = request.app["cfg"]
+    if not cfg.copy:
+        return web.Response(status=403, text="this entrance does not relay copies\n")
+    onion = request.query.get("onion", "").strip().lower()
+    if not ONION_RE.match(onion):
+        return web.Response(status=400, text="onion must be a v3 onion address\n")
+    session = session_tag(request)
+    if session is None:
+        return web.Response(status=400, text="a copy needs a session tag\n")
+    sockname = request.transport.get_extra_info("sockname") if request.transport else None
+    local_port = sockname[1] if isinstance(sockname, tuple) and len(sockname) > 1 else None
+    visitor = visitor_key(visitor_address(request, cfg), local_port, cfg, session)
+    limits: Limits = request.app["limits"]
+    copies: set = request.app["copies"]
+    mark = limits._mac("copy", visitor, session)
+    if mark in copies:
+        return web.Response(status=429, text="one copy at a time\n")
+    tag = limits.take(visitor, session)
+    if tag is None:
+        return web.Response(status=429, text="too many connections\n")
+    copies.add(mark)
+    ws = web.WebSocketResponse(max_msg_size=CHUNK * 4, heartbeat=30)
+    try:
+        await ws.prepare(request)
+        try:
+            reader, writer = await open_tunnel(cfg, onion, limits.credentials(visitor, session),
+                                               port=COPY_PORT)
+        except (ProxyError, OSError, asyncio.TimeoutError):
+            await ws.close(code=4004, message=b"the other device is unreachable over Tor")
+            return ws
+        sent = [0, 0]                      # browser -> device, device -> browser
+
+        async def up() -> None:
+            async for msg in ws:
+                if msg.type not in (WSMsgType.BINARY, WSMsgType.TEXT):
+                    break
+                data = msg.data if msg.type == WSMsgType.BINARY else msg.data.encode("utf-8")
+                sent[0] += len(data)
+                if sent[0] > COPY_BYTES:
+                    break
+                writer.write(data)
+                await writer.drain()
+
+        async def down() -> None:
+            while True:
+                data = await reader.read(CHUNK)
+                if not data:
+                    break
+                sent[1] += len(data)
+                if sent[1] > COPY_BYTES:
+                    break
+                await ws.send_bytes(data)
+
+        tasks = [asyncio.create_task(up()), asyncio.create_task(down())]
+        try:
+            await asyncio.wait(tasks, timeout=COPY_SECONDS, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in tasks:
+                t.cancel()
+            writer.close()
+            if not ws.closed:
+                await ws.close()
+        return ws
+    finally:
+        copies.discard(mark)
+        limits.give(tag)
+
+
 SECURITY_HEADERS = {
     # nothing from elsewhere (UN-RFC 0043 6.4)
     # 'wasm-unsafe-eval': the client's Python (Pyodide) is WebAssembly; no other eval
@@ -354,7 +434,7 @@ async def home(request: web.Request, handler):
     address is the one that keeps working when the name is blocked. The tunnel and
     what the entrance says about itself answer on every name."""
     target = request.app["cfg"].home
-    if target and request.method in ("GET", "HEAD") and not request.path.startswith(("/onntp", "/.well-known/")):
+    if target and request.method in ("GET", "HEAD") and not request.path.startswith(("/onntp", "/copy", "/.well-known/")):
         host = request.host.rsplit(":", 1)[0].strip("[]").lower()
         own = target.split("://", 1)[-1].split("/", 1)[0].strip("[]").lower()
         if host != own and not host.endswith(".onion") and host not in ("127.0.0.1", "localhost", "::1"):
@@ -389,7 +469,8 @@ def web_version(cfg: Config) -> str:
 async def entrance_info(request: web.Request) -> web.Response:
     cfg: Config = request.app["cfg"]
     mirror = request.app["mirror"].versions()
-    return web.json_response({**cfg.info, "web": web_version(cfg), **({"mirror": mirror} if mirror else {})})
+    return web.json_response({**cfg.info, "copy": cfg.copy, "web": web_version(cfg),
+                              **({"mirror": mirror} if mirror else {})})
 
 
 async def mirror_file(request: web.Request) -> web.StreamResponse:
@@ -455,11 +536,13 @@ def make_app(cfg: Config) -> web.Application:
     app["cfg"] = cfg
     app["limits"] = Limits(cfg.max_per_visitor, cfg.max_total, cfg.max_sessions)
     app["allowed"] = cfg.allowed_nodes()
+    app["copies"] = set()                   # sessions with a copy open (UN-RFC 0043 4.5)
     app["list"] = ListCache(cfg.list_group)
     app["releases"] = ListCache(cfg.release_group, WEB_RELEASE_SUBJECT)
     from .mirror import Mirror
     app["mirror"] = Mirror(cfg, app["releases"], app["list"])
     app.router.add_get("/onntp", onntp)
+    app.router.add_get("/copy", copy_tunnel)
     app.router.add_get("/.well-known/unseenet-entrance", entrance_info)
     app.router.add_get("/.well-known/unseenet-entrances.json", entrances_list)
     app.router.add_get("/.well-known/unseenet-releases.json", releases_list)
