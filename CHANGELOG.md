@@ -9,6 +9,11 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **The web client is built from core 0.6.4**: a copied or restored identity has its
+  own feed and site, rather than *Start your feed* and *Start your site* (unseenet#771).
+- **The web client is built from unseenet-gui 0.3.2**: on a phone every dialog fits (Your
+  nodes did not), New post is a round + always in reach, and writing a comment keeps
+  still with what you sent in sight (gui#264, #261, #257, #258).
 - **The web client is built from core 0.6.3** (a used copy code says so).
 - **No mixed-content error in the console** (#62): from an https page, the web client
   asked the entrance's onion address over http:// to see whether this browser has Tor.
