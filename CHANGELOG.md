@@ -9,6 +9,9 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **Tests and releases on the shared workflows** (#42, unseenet#545): `python-tests.yml`
+  (3.11 and 3.13, and once more against the core's main) and `release-build.yml` /
+  `release-github.yml`, as the terminal client's. PyPI publishing stays here.
 - **The mirror follows the two build repositories** (#44): the portable zips come from
   unseenet-portable and the images and a stick's update zip from unseenet-bootable, each
   with its own signed checksums (unseenet as a fallback for older releases). With
