@@ -9,6 +9,13 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **The mirror follows the two build repositories** (#44): the portable zips come from
+  unseenet-portable and the images and a stick's update zip from unseenet-bootable, each
+  with its own signed checksums (unseenet as a fallback for older releases). With
+  `MIRROR=all` each is kept at its own newest version, so a portable post-release and the
+  bootable images of the release before it are both mirrored; the images' sums are served
+  as `SHA256SUMS-bootable.txt`, and `/.well-known/unseenet-entrance` names every version
+  it has in `mirror_all`. Other entrances that mirror a version are found by it too.
 - **The web client is built from unseenet-gui 0.3.3**: on a phone one head everywhere with
   the round + for its action, a chat line you can see what you write in, Private as on the
   desktop, one icon for the palette, and a copied key's ripening shown right (gui#256,

@@ -475,8 +475,11 @@ def web_version(cfg: Config) -> str:
 async def entrance_info(request: web.Request) -> web.Response:
     cfg: Config = request.app["cfg"]
     mirror = request.app["mirror"].versions()
+    # every version of each stream too (#44): a bootable image can be at another version
+    every = request.app["mirror"].all_versions()
     return web.json_response({**cfg.info, "copy": cfg.copy, "web": web_version(cfg),
-                              **({"mirror": mirror} if mirror else {})})
+                              **({"mirror": mirror} if mirror else {}),
+                              **({"mirror_all": every} if every else {})})
 
 
 async def mirror_file(request: web.Request) -> web.StreamResponse:
