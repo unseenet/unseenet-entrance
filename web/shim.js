@@ -18,7 +18,7 @@
   const toWorker = (msg, transfer = []) => (worker ? worker.postMessage(msg, transfer) : early.push([msg, transfer]));
   const pending = new Map();
   const sockets = new Set();
-  let nextId = 1, booted = false, vaultDirty = false, bootText = "Starting ...";
+  let nextId = 1, booted = false, vaultDirty = false, bootText = "Starting Unseenet …", bootStep = 0;
   let ripenUnsaved = false;        // ripening steps since the vault was saved (#32)
   let savedLevelNote = null;       // the key level the save button mentions
   const vaultClean = () => { vaultDirty = false; ripenUnsaved = false; savedLevelNote = null; };
@@ -46,8 +46,10 @@
         if (m.kind === "level" && m.level !== null && m.level !== undefined) savedLevelNote = m.level;
         updateBar();
       }
+    } else if (m.type === "cache-changed") {
+      if (kept) keepCacheSoon();                     // the offline cache, kept with the vault (#68)
     } else if (m.type === "boot") {
-      bootText = m.text; updateBoot();
+      bootText = m.text; if (m.step) bootStep = m.step / (m.of || 3); updateBoot();
     } else if (m.type === "ready") {
       booted = true; updateBoot();
     } else if (m.type === "fatal") {
@@ -94,7 +96,7 @@
     bootText = "Looking for an entrance that answers ..."; updateBoot();
     entrance = await pickEntrance();
     updateBar();
-    bootText = "Unpacking the client ..."; updateBoot();
+    bootText = "Starting Unseenet …"; updateBoot();
     const names = FILE.files;
     const files = {};
     const transfer = [];
@@ -481,12 +483,29 @@
     vaultClean(); updateBar();
     return true;
   }
+  // The offline cache (#68): the newest articles of each group, encrypted with the vault's
+  // key as on a stick, kept beside a vault kept on this device so the groups show at once
+  // and can be read offline. Never when the vault is not kept. The core keeps only the
+  // newest of each group; a cache over CACHE_MAX is not kept.
+  const CACHE_MAX = 64 * 1024 * 1024;
+  let cacheTimer = null;
+  async function storeCache() {
+    const r = await call({ type: "cache-out" });
+    if (!r.bytes) return;
+    if (r.bytes.byteLength > CACHE_MAX) { await idbDo("readwrite", (s) => s.delete("cache")); return; }
+    await idbDo("readwrite", (s) => s.put({ bytes: r.bytes, saved: Date.now() }, "cache"));
+  }
+  function keepCacheSoon() {
+    clearTimeout(cacheTimer);
+    cacheTimer = setTimeout(() => storeCache().catch(() => {}), 3000);
+  }
   function keepSoon() {
     clearTimeout(keepTimer);
     keepTimer = setTimeout(() => storeVault().catch(() => { vaultDirty = true; updateBar(); }), 800);
   }
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden" && kept && keepTimer) { clearTimeout(keepTimer); storeVault().catch(() => {}); }
+    if (document.visibilityState === "hidden" && kept && cacheTimer) { clearTimeout(cacheTimer); cacheTimer = null; storeCache().catch(() => {}); }
   });
   async function restoreVault() {
     let rec = null;
@@ -494,6 +513,11 @@
     if (!rec || !rec.bytes) return;
     kept = true;
     const r = await call({ type: "vault-in", bytes: rec.bytes });
+    // and the groups as they were (#68): shown before any node answers
+    try {
+      const cache = await idbDo("readonly", (s) => s.get("cache"));
+      if (r.ok && cache && cache.bytes) await call({ type: "cache-in", bytes: cache.bytes });
+    } catch { /* only a cache: the node has it all */ }
     if (r.ok && typeof S !== "undefined" && typeof api === "function" && typeof render === "function") {
       await refreshState(); S.error = null; render();
     }
@@ -511,18 +535,19 @@
             try {
               if (!(await storeVault())) { alert("Create or open a vault first."); return; }
               kept = true; navigator.storage?.persist?.().catch(() => {});
+              storeCache().catch(() => {});             // what is read so far, too (#68)
               updateBar(); close();
             } catch (err) { alert("This browser would not keep it: " + err.message); }
           } } }, "Keep it on this device"),
           el("button", { class: "uw-btn", on: { onclick: close } }, "Not now")));
     } else {
       d.append(el("h2", {}, "Your vault is on this device"),
-        el("p", {}, "Encrypted with your passphrase. Changes are kept by themselves."),
+        el("p", {}, "Encrypted with your passphrase. Changes are kept by themselves, and the posts you read, so the groups show at once and can be read offline."),
         el("div", { class: "uw-row" },
           el("button", { class: "uw-btn", on: { onclick: () => { saveVault(); close(); } } }, "Save a copy as a file"),
           el("button", { class: "uw-btn", on: { onclick: async () => {
             if (!confirm("Delete the vault from this device? Without a copy as a file, this identity is gone.")) return;
-            await idbDo("readwrite", (s) => s.delete("vault")).catch(() => {});
+            await idbDo("readwrite", (s) => { s.delete("cache"); return s.delete("vault"); }).catch(() => {});
             kept = false; vaultDirty = true; updateBar(); close();
           } } }, "Forget it on this device"),
           el("button", { class: "uw-btn", on: { onclick: close } }, "Close")));
@@ -574,6 +599,7 @@
     if (!boot) return;
     boot.hidden = booted && !failed;
     boot.querySelector(".uw-boot-text").textContent = bootText;
+    boot.querySelector(".uw-boot-bar > span").style.width = Math.round(100 * (booted ? 1 : bootStep)) + "%";
   }
   // Carry on through another entrance: only the tunnel changes. The page, the vault
   // and everything open stay as they are, at this address.
@@ -688,7 +714,8 @@
       file);
     boot = el("div", { class: "uw-boot" }, el("div", { class: "uw-boot-box" },
       el("div", { class: "uw-boot-text" }, bootText),
-      el("div", { class: "uw-boot-note" }, "The first visit loads about 15 MB: Python and the Unseenet core run here, in your browser.")));
+      el("div", { class: "uw-boot-bar", role: "progressbar", "aria-label": "Starting" }, el("span")),
+      el("div", { class: "uw-boot-note" }, "The first time, the app is fetched - about 15 MB. After that it starts from this device.")));
     document.body.prepend(bar);
     document.body.append(boot);
     updateBar(); updateBoot();
