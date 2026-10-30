@@ -36,6 +36,14 @@ its open address. Clients find it in the signed list of entrances and use
 nothing that does not match the signature, so a mirror needs no trust.
 `MIRROR=off` removes it.
 
+The portable zips and the bootable images are built in two repositories,
+each with its own signed checksums, and can be at different versions - a
+portable post-release beside the bootable images of the release before it.
+The mirror keeps the newest of each: `/mirror/<channel>/SHA256SUMS.txt` are
+the portable builds' checksums, `SHA256SUMS-bootable.txt` the images'. Its
+`/.well-known/unseenet-entrance` names the portable version in `mirror` and
+every version it has in `mirror_all`.
+
 ## When an entrance is blocked
 
 Every entrance serves the **jump page**, `/unseenet-entrances.html`: one
