@@ -9,6 +9,14 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+- **The groups are there when you come back** (#68): with the vault kept on this device, the
+  offline cache - the newest posts of each group, encrypted with the vault's key as on a
+  stick - is kept with it in the browser, so reopening the page shows the groups at once,
+  before any node answers, and they can be read offline. Not kept when the vault is not;
+  *Forget it on this device* removes it too. A cache over 64 MB is not kept.
+- **The loading screen says less** (#67): *Starting Unseenet …* with a bar for how far it
+  is, instead of *Loading Python* and the names of the steps; the note says the first
+  visit fetches about 15 MB, without naming Python.
 - **Tests and releases on the shared workflows** (#42, unseenet#545): `python-tests.yml`
   (3.11 and 3.13, and once more against the core's main) and `release-build.yml` /
   `release-github.yml`, as the terminal client's. PyPI publishing stays here.

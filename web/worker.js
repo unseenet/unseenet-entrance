@@ -19,7 +19,9 @@ const HERE = import.meta.url;                                           // FILE
 let loadPyodide = servedPyodide;
 
 const post = (m) => self.postMessage(JSON.stringify(m));
-const status = (text) => post({ type: "boot", text });
+// what the loading screen says (#67): one plain sentence; the steps only as how far it is
+const STARTING = "Starting Unseenet …";
+const status = (text, step = null) => post({ type: "boot", text, step, of: 3 });
 
 let wb = null;
 let started = null;
@@ -56,10 +58,10 @@ async function pyodide(init) {
 }
 
 async function start(init) {
-  status("Loading Python ...");
+  status(STARTING, 1);
   initMessage = init;
   const py = await pyodide(init);
-  status("Loading the Unseenet core ...");
+  status(STARTING, 2);
   await py.loadPackage(["pynacl", "aiohttp", "cryptography", "pillow", "chiavdf"],
                        { messageCallback: () => {} });   // as PYODIDE_PACKAGES in tools/build_web.py
   let bundle = init.files && init.files["bundle.zip"];
@@ -175,11 +177,14 @@ async function handle(m) {
     } else if (m.type === "entrance") {
       wb.switch_entrance(m.url);
       post({ type: "reply", id: m.id, ok: true });
-    } else if (m.type === "vault-out") {
-      const b = wb.vault_out();
+    } else if (m.type === "vault-out" || m.type === "cache-out") {
+      const b = m.type === "vault-out" ? wb.vault_out() : wb.cache_out();
       const bytes = b ? b.toJs() : null;
       b?.destroy?.();
       self.postMessage({ type: "vault-file", id: m.id, bytes }, bytes ? [bytes.buffer] : []);
+    } else if (m.type === "cache-in") {                     // the offline cache kept here (#68)
+      wb.cache_in(new Uint8Array(m.bytes));
+      post({ type: "reply", id: m.id, ok: true });
     }
   } catch (err) {
     const text = String(err && err.message || err).split("\n").filter(Boolean).pop();

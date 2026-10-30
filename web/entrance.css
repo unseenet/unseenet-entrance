@@ -19,6 +19,8 @@ html.uw #root > .app { height: 100%; }
 .uw-boot-box { max-width: 420px; padding: 24px; text-align: center; }
 .uw-boot-text { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
 .uw-boot-note { color: #9cc3b6; font-size: 13px; }
+.uw-boot-bar { height: 4px; border-radius: 2px; background: #1f4a40; margin: 12px auto; width: 220px; overflow: hidden; }
+.uw-boot-bar > span { display: block; height: 100%; width: 0; background: #3fd19a; transition: width .4s; }
 .uw-dialog { box-sizing: border-box; max-width: min(620px, calc(100vw - 24px)); width: calc(100% - 24px); border-radius: 12px; border: 1px solid #c9e2d9;
   font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; color: #10302a; background: #f4f8f6; }
 .uw-dialog table { border-collapse: collapse; width: 100%; font-size: 13px; }

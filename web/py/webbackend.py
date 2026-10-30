@@ -157,8 +157,17 @@ def _patch_vault() -> None:
             v._web_seen = {}
         return v
 
+    original_sidecar = vault.Vault.write_sidecar
+
+    def write_sidecar(self, name, payload):
+        # the offline cache (#68): the page keeps it with the vault when the vault is kept
+        original_sidecar(self, name, payload)
+        if _post and name == CACHE:
+            _post(json.dumps({"type": "cache-changed"}))
+
     vault.Vault.save = save
     vault.Vault.open = classmethod(open_)
+    vault.Vault.write_sidecar = write_sidecar
 
 
 def start(entrance_url: str, post_message, ripening_js=None) -> str:
@@ -245,3 +254,26 @@ def vault_in(data: bytes) -> None:
 
 def vault_out() -> bytes | None:
     return VAULT.read_bytes() if VAULT.exists() else None
+
+
+# The offline cache beside the vault (Session.save_offline: the newest articles of each
+# group, encrypted with the vault's key, CACHE_SIDECAR). The page keeps it with a vault
+# kept on this device, so reopening shows the groups at once and reading works offline (#68).
+CACHE = "cache"
+
+
+def _cache_path() -> Path:
+    return VAULT.with_name(f"{VAULT.name}.{CACHE}")
+
+
+def cache_in(data: bytes) -> None:
+    """The cache kept on this device, put back before the vault is unlocked."""
+    if _runtime and _runtime.session is not None:
+        raise RuntimeError("a vault is already open")
+    VAULT.parent.mkdir(parents=True, exist_ok=True)
+    _cache_path().write_bytes(bytes(data))
+
+
+def cache_out() -> bytes | None:
+    p = _cache_path()
+    return p.read_bytes() if p.exists() else None
