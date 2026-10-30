@@ -165,9 +165,12 @@ def _patch_vault() -> None:
         if _post and name == CACHE:
             _post(json.dumps({"type": "cache-changed"}))
 
+    write_sidecar._web = True
+
     vault.Vault.save = save
     vault.Vault.open = classmethod(open_)
-    vault.Vault.write_sidecar = write_sidecar
+    if not getattr(original_sidecar, "_web", False):    # once, also when patched again
+        vault.Vault.write_sidecar = write_sidecar
 
 
 def start(entrance_url: str, post_message, ripening_js=None) -> str:
