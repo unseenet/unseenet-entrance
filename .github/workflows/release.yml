@@ -1,7 +1,8 @@
 name: release
 # Push a tag like v0.1.0 to release (v0.1.1a1 for a test release: PyPI and GitHub
 # mark it as a pre-release). The tag must match __version__ and, for a full
-# release, have a section in CHANGELOG.md, which becomes the release notes.
+# release, have a section in CHANGELOG.md, which becomes the release notes - the
+# shared release workflows (unseenet#545, #42).
 # Versioning as in unseenet: https://github.com/unseenet/unseenet/blob/main/docs/development.md#versioning
 on:
   push:
@@ -9,31 +10,11 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Check that the tag matches the version and the changelog
-        run: |
-          VERSION=$(python -c "import sys; sys.path.insert(0, 'src'); import unseenet_entrance; print(unseenet_entrance.__version__)")
-          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match version $VERSION" >&2; exit 1
-          fi
-          case "$VERSION" in
-            *a*|*b*|*rc*) ;;   # test releases: the notes are under [Unreleased]
-            *) grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "CHANGELOG.md has no section for $VERSION" >&2; exit 1; } ;;
-          esac
-      - run: pip install -e ".[dev]" build twine
-      - run: pytest -q
-      - run: python -m build && twine check dist/*
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
+    uses: unseenet/.github/.github/workflows/release-build.yml@main
+    with:
+      package: unseenet_entrance
 
-  pypi:
+  pypi:                        # here: PyPI's trusted publishing does not take reusable workflows
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -48,33 +29,10 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
 
-  github-release:
+  github:
     needs: pypi
-    runs-on: ubuntu-latest
+    uses: unseenet/.github/.github/workflows/release-github.yml@main
+    with:
+      title: "Unseenet entrance"
     permissions:
       contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - name: Release notes from CHANGELOG.md
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md > notes.md
-          if [ ! -s notes.md ]; then
-            { echo "**Test release $VERSION.**"; echo
-              awk '/^## \[Unreleased\]/ {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md; } > notes.md
-          fi
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          PRE="--prerelease=false --latest"
-          case "$GITHUB_REF_NAME" in *a[0-9]*|*b[0-9]*|*rc[0-9]*) PRE="--prerelease --latest=false";; esac
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-            gh release edit "$GITHUB_REF_NAME" --title "Unseenet entrance $GITHUB_REF_NAME" --notes-file notes.md $PRE --draft=false
-          else
-            gh release create "$GITHUB_REF_NAME" dist/* --title "Unseenet entrance $GITHUB_REF_NAME" --notes-file notes.md $PRE
-          fi
