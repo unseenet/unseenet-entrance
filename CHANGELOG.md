@@ -9,6 +9,10 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+### Changed
+
+- Runs on core 0.7 (`unseenet>=0.7,<0.8`): announced nodes, councils and servers that update themselves.
+
 - **The groups are there when you come back** (#68): with the vault kept on this device, the
   offline cache - the newest posts of each group, encrypted with the vault's key as on a
   stick - is kept with it in the browser, so reopening the page shows the groups at once,

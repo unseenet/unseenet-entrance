@@ -14,7 +14,7 @@ requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.9",
     "python-socks[asyncio]>=2.4",
-    "unseenet>=0.6,<0.7",   # one minor version of the core at a time
+    "unseenet>=0.7,<0.8",   # one minor version of the core at a time
 ]
 
 [project.optional-dependencies]
