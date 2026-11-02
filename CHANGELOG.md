@@ -15,6 +15,13 @@ in `unseenet.releases`); this file is about the entrance that serves it.
   (UN-RFC 0020 section 5.1, unseenet/unseenet#861), and the publisher whose web client it
   serves, in `/.well-known/unseenet-entrance`, so the council's replicas know the announcement
   is the operator's. Announce with `unseenet council announce-entrance` (core 0.8).
+- **The list of entrances can move to a list council** (UN-RFC 0020 section 10,
+  unseenet/unseenet#861). When the project's `unseenet.entrances` says it moved
+  (`moved_to`), the entrance also fetches the council's manifest copies and its entrance list
+  and serves them in `/.well-known/unseenet-entrances.json`. Web clients and the jump page
+  count the council's chain themselves (`js/council.js`, the same rules as the core's,
+  checked against it in the tests) and take the newest list its members posted - until
+  there is one, the old list. A bundle without the council reads as before.
 
 ## [0.4.0] - 2026-11-02
 

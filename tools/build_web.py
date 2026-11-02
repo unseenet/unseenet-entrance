@@ -263,7 +263,7 @@ def write_release(out: Path) -> Path:
 
 JS = ROOT / "js"
 JUMP_MODULES = [JS / "vendor" / "noble.js", JS / "encoding.js", JS / "article.js",
-                JS / "entrances.js", ROOT / "jump" / "jump.js"]
+                JS / "council.js", JS / "entrances.js", ROOT / "jump" / "jump.js"]
 _IMPORT = re.compile(r'^import\s*\{([^}]*)\}\s*from\s*"([^"]+)";?\s*$', re.M)
 _EXPORT_DECL = re.compile(r"^export\s+((?:async\s+)?function\*?|const|let|class)\s+([A-Za-z_$][\w$]*)", re.M)
 _EXPORT_LIST = re.compile(r"export\s*\{([^}]*)\};?")
@@ -321,7 +321,8 @@ def build_jump(owner: str | None, group: str | None) -> None:
 
 # --- the client in a file (UN-RFC 0043 section 8.7) ----------------------------
 
-FILE_MODULES = [JS / "vendor" / "noble.js", JS / "encoding.js", JS / "article.js", JS / "entrances.js",
+FILE_MODULES = [JS / "vendor" / "noble.js", JS / "encoding.js", JS / "article.js", JS / "council.js",
+                JS / "entrances.js",
                 JS / "releases.js"]
 
 

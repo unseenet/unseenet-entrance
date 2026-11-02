@@ -161,7 +161,11 @@ serves with the signed release, and tunnels to a node.
 - It serves the web client, and the signed lists it reads from the network
   about once an hour: the entrances (`/.well-known/unseenet-entrances.json`)
   and the versions of the web client (`/.well-known/unseenet-releases.json`),
-  as raw signed articles that clients check themselves.
+  as raw signed articles that clients check themselves. Once the list of
+  entrances has moved to a list council (UN-RFC 0020 section 10), it also
+  serves the council's manifest copies and its list; clients count the
+  council's chain themselves (`js/council.js`) and take the list its members
+  posted.
 - It writes nothing about visitors anywhere: no access log, no error that
   names an address. Limits are counted in memory, under a key made at start.
 

@@ -551,7 +551,7 @@ def make_app(cfg: Config) -> web.Application:
     app["limits"] = Limits(cfg.max_per_visitor, cfg.max_total, cfg.max_sessions)
     app["allowed"] = cfg.allowed_nodes()
     app["copies"] = set()                   # sessions with a copy open (UN-RFC 0043 4.5)
-    app["list"] = ListCache(cfg.list_group)
+    app["list"] = ListCache(cfg.list_group, follow="entrances")   # UN-RFC 0020 section 10
     app["releases"] = ListCache(cfg.release_group, WEB_RELEASE_SUBJECT)
     from .mirror import Mirror
     app["mirror"] = Mirror(cfg, app["releases"], app["list"])
