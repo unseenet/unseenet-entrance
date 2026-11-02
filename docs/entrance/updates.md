@@ -13,10 +13,19 @@ No restart. `ENTRANCE_AUTO_UPDATE=off` stops it.
 Visitors' apps update the same way, but only when they say so (*New version*
 in the bar), and never go back to an older version.
 
-**The entrance's own code** is never updated by itself. Run the install
-command again to update it; it installs the newest release of
-[unseenet-entrance](https://github.com/unseenet/unseenet-entrance/releases),
-and its [changelog](https://github.com/unseenet/unseenet-entrance/blob/main/CHANGELOG.md)
+**The entrance's own code** is updated by itself only when you turn that on
+(UN-RFC 0043 section 7.3): run the install command with `SELF_UPDATE=on`. It
+then takes the newest release of
+[unseenet-entrance](https://github.com/unseenet/unseenet-entrance/releases)
+that the project key signed, a random time of up to 48 hours after it is out,
+installs only files whose hashes the signed release gives, never goes to an
+older version, and goes back to the version before - and skips that release -
+if the entrance does not answer afterwards (unseenet/unseenet#827).
+`SELF_UPDATE=off` turns it off again;
+`/opt/unseenet-entrance/.venv/bin/unseenet-service-update status --service
+unseenet-entrance` says what it did. Otherwise, run the install command again
+to update; the
+[changelog](https://github.com/unseenet/unseenet-entrance/blob/main/CHANGELOG.md)
 says what changed.
 
 Neither needs GitHub to stay reachable: the posts are read through the
