@@ -7,7 +7,8 @@
 # REF=vX.Y.Z or REF=main picks what is cloned from a URL (default: the newest
 # release tag, so an entrance runs a release).
 #
-# HTTPS, chosen with TLS=... (default auto):
+# HTTPS, chosen with TLS=... (default: the choice from the last time this script
+# ran here, or auto on a new machine):
 #   TLS=auto            a Let's Encrypt certificate for this machine's public IP
 #                       address (6-day certificates, renewed automatically); if
 #                       that fails, plain HTTP on port 8043 and an explanation
@@ -16,6 +17,8 @@
 #                       sends visitors on to the address, so the app lives at one origin
 #                       that still works when the name is blocked (6-day certificates)
 #   TLS=none            plain HTTP on port 8043 (a LAN test, or your own proxy in front)
+# The choice is kept in /etc/unseenet-entrance/tls-choice, so running this script
+# again to update never swaps a name's certificate for the address's.
 # Ports 80 and 443 must be open to the internet for the first two. On a machine
 # whose own firewall rejects them (Oracle Cloud's images do), they are opened.
 #
@@ -53,7 +56,6 @@
 set -eu
 
 SRC="${1:-https://github.com/unseenet/unseenet-entrance.git}"
-TLS="${TLS:-auto}"
 APP=/opt/unseenet-entrance
 ENVFILE=/etc/unseenet-entrance.env
 TLSDIR=/etc/unseenet-entrance/tls
@@ -61,8 +63,39 @@ ACME=/var/lib/unseenet-entrance/acme
 CERTBOT=/opt/certbot/bin/certbot
 WEBREL=/var/lib/unseenet-entrance/web     # versions of the web client; "current" is served
 MIRRORDIR=/var/lib/unseenet-entrance/mirror
+TLSCHOICE=/etc/unseenet-entrance/tls-choice
+LIVECERT=/etc/letsencrypt/live/unseenet-entrance/cert.pem
+
+# saved_tls: the HTTPS choice made the last time this script ran here, so that
+# running it again to update keeps it (a name's certificate is not swapped for
+# the address's). An entrance installed before the choice was kept: read from
+# the certificate it has. Nothing on a new machine.
+saved_tls() {
+  if [ -s "$TLSCHOICE" ]; then head -n 1 "$TLSCHOICE"; return 0; fi
+  [ -f "$LIVECERT" ] && command -v openssl >/dev/null || return 0
+  san=$(openssl x509 -noout -ext subjectAltName -in "$LIVECERT" 2>/dev/null | tail -n +2 | tr ',' '\n' | sed 's/^ *//')
+  name=$(printf '%s\n' "$san" | sed -n 's/^DNS://p' | head -n 1)
+  if printf '%s\n' "$san" | grep -q '^IP Address:'; then ip=1; else ip=""; fi
+  if [ -n "$name" ] && [ -n "$ip" ]; then echo "both:$name"
+  elif [ -n "$name" ]; then echo "domain:$name"
+  elif [ -n "$ip" ]; then echo auto
+  fi
+  return 0
+}
 
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
+
+SAVED_TLS=$(saved_tls)
+if [ -z "${TLS:-}" ]; then
+  TLS="${SAVED_TLS:-auto}"
+  [ -n "$SAVED_TLS" ] && echo "== HTTPS: TLS=$TLS, as before (give TLS=... to change it)"
+elif [ -n "$SAVED_TLS" ] && [ "$TLS" != "$SAVED_TLS" ]; then
+  echo "== HTTPS: TLS=$TLS, instead of TLS=$SAVED_TLS before"
+fi
+case "$TLS" in
+  none|auto|ip|domain:?*|both:?*) ;;
+  *) echo "unknown TLS=$TLS (auto, domain:NAME, both:NAME or none)"; exit 1 ;;
+esac
 
 echo "== packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -379,9 +412,10 @@ case "$TLS" in
       echo "   Running plain HTTP on port 8043 for now; run this script again when it is."
       plain_http
     fi ;;
-  *)
-    echo "unknown TLS=$TLS"; exit 1 ;;
 esac
+# kept for the next run (also when it fell back to plain HTTP: the next run tries again)
+mkdir -p "$(dirname "$TLSCHOICE")"
+printf '%s\n' "$TLS" > "$TLSCHOICE"
 
 sleep 2
 systemctl --no-pager --lines=3 status unseenet-entrance | head -5

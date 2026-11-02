@@ -118,7 +118,7 @@ given before `sh`:
 
 | Setting | |
 |---|---|
-| `TLS=auto` (default) | A certificate for the public IP address; plain HTTP on port 8043 if that fails, with the reason |
+| `TLS=auto` (default on a new machine) | A certificate for the public IP address; plain HTTP on port 8043 if that fails, with the reason |
 | `TLS=domain:NAME` | A normal certificate for NAME (point it here first) |
 | `TLS=both:NAME` | One certificate for NAME and the public IP address. NAME is the one to share; it sends visitors on to the address, so the app and a vault kept on the device live at one place, which still works when the name is blocked |
 | `TLS=none` | Plain HTTP on port 8043: a LAN test, or your own proxy in front |
@@ -127,7 +127,10 @@ given before `sh`:
 | `JOURNAL=keep` | Leave the system journal as it is, on a machine that does other things too |
 
 Run the same command again to update the entrance's own code; settings in
-`/etc/unseenet-entrance.env` are kept. Its other settings:
+`/etc/unseenet-entrance.env` are kept, and so is the `TLS=` choice (in
+`/etc/unseenet-entrance/tls-choice`): without `TLS=` it does what it did last
+time, so a name's certificate is never swapped for the address's. Give `TLS=`
+to change it. Its other settings:
 
 | In `/etc/unseenet-entrance.env` | |
 |---|---|
