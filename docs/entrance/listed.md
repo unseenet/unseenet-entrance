@@ -8,6 +8,31 @@ of Unseenet. The list says who is known, not who is safe: no one can see
 whether an entrance keeps logs, so it is only as good as the promise of
 section 5 and the checks below.
 
+## With the list council
+
+The list is moving from the project's hand to a list council
+([UN-RFC 0020](https://unseenet.org/spec/un-rfc-0020/) section 6.3), whose
+replicas check every announced entrance each day by the same rules. Until the
+project moves the list there, ask as below; to be ready:
+
+1. Make an identity for the entrance (`unseenet id-new my-entrance`) and
+   announce it to the council:
+
+   ```bash
+   unseenet --identity my-entrance council announce-entrance unseenet.lists@<fp> \
+       --url https://web.example/ --onion <56 letters>.onion --operator @me
+   ```
+
+2. Set the key it prints as `ENTRANCE_KEY` in `/etc/unseenet-entrance.env` and
+   restart. The entrance then names it, and the publisher whose web client it
+   serves (`ENTRANCE_RELEASE_GROUP`), in `/.well-known/unseenet-entrance`.
+3. Announce again within 30 days, or when anything changes.
+
+After 14 good days in a row - each file served matching the publisher's signed
+release, and a new release served within 7 days of it appearing - the entrance
+is listed. It leaves after 10 days without a good day, or by a decision of the
+council after a public hearing.
+
 ## Asking
 
 1. [Install the entrance](index.md#installation), and set `ENTRANCE_OPERATOR`

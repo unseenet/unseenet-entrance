@@ -9,6 +9,13 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+### Added
+
+- **`ENTRANCE_KEY`: the entrance names the key it announced itself with** to a list council
+  (UN-RFC 0020 section 5.1, unseenet/unseenet#861), and the publisher whose web client it
+  serves, in `/.well-known/unseenet-entrance`, so the council's replicas know the announcement
+  is the operator's. Announce with `unseenet council announce-entrance` (core 0.8).
+
 ## [0.4.0] - 2026-11-02
 
 On core 0.7, and the web client built from core 0.7.0 and the graphical client 0.6.0. Needs unseenet 0.7 (`unseenet>=0.7,<0.8`): update the nodes first.
