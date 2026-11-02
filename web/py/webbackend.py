@@ -87,6 +87,50 @@ def _patch_ripening(ripening_js) -> None:
     session.Session._prove_segment = prove_segment
 
 
+def _patch_pictures(pictures_js) -> None:
+    """Decode pictures from the network in the picture worker that worker.js runs
+    (UN-RFC 0027 section 9.2): Pyodide cannot start the separate decoding process the
+    core uses elsewhere, so the browser's own decoder does it, in a worker that holds
+    nothing but the file - never the vault - and saves it again from its pixels only.
+    ``pictures_js.decode(octets, type, ms)`` gives ``{bytes, type, width, height}`` or
+    ``{error}``. The core's checks (type from the content, size limits, time) stay as
+    they are: through ``decode.elsewhere`` (unseenet#912), or with a core before it
+    the same checks here."""
+    from pyodide.ffi import to_js
+    from unseenet.client import decode
+
+    async def in_worker(octets: bytes, media_type: str):
+        got = await pictures_js.decode(to_js(bytes(octets)), media_type,
+                                       int(decode.TIMEOUT * 1000))
+        error = getattr(got, "error", None)
+        if error:
+            raise decode.DecodeError(str(error))
+        return decode.Picture(str(got.type), got.bytes.to_bytes(), int(got.width),
+                              int(got.height))
+
+    if hasattr(decode, "elsewhere"):
+        decode.elsewhere = in_worker
+        return
+
+    async def picture_async(octets: bytes, declared: str | None = None):
+        media_type = decode._check(octets, declared)
+        try:
+            got = await asyncio.wait_for(in_worker(octets, media_type), decode.TIMEOUT)
+        except asyncio.TimeoutError:
+            raise decode.DecodeError("this picture took too long to read") from None
+        except decode.DecodeError:
+            raise
+        except Exception:  # noqa: BLE001 - whatever the browser raises
+            raise decode.DecodeError("this picture could not be read") from None
+        if got.media_type not in decode.SHOWN or got.width <= 0 or got.height <= 0:
+            raise decode.DecodeError("this picture could not be read")
+        if got.width * got.height > decode.MAX_PIXELS:
+            raise decode.DecodeError("this picture is too large to show (over 50 megapixels)")
+        return got
+
+    decode.picture_async = picture_async
+
+
 def _patch_network(entrance_url: str) -> None:
     import webtransport
     from unseenet.client import session
@@ -173,13 +217,15 @@ def _patch_vault() -> None:
         vault.Vault.write_sidecar = write_sidecar
 
 
-def start(entrance_url: str, post_message, ripening_js=None) -> str:
+def start(entrance_url: str, post_message, ripening_js=None, pictures_js=None) -> str:
     """Build the GUI's app. Returns the token the page sends with each request."""
     global _app, _runtime, _post
     _post = post_message
     _patch_threads()
     if ripening_js is not None:
         _patch_ripening(ripening_js)
+    if pictures_js is not None:
+        _patch_pictures(pictures_js)
     _patch_network(entrance_url)
     _patch_vault()
     from unseenet_gui.server import build
