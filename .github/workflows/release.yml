@@ -2,7 +2,11 @@ name: release
 # Push a tag like v0.1.0 to release (v0.1.1a1 for a test release: PyPI and GitHub
 # mark it as a pre-release). The tag must match __version__ and, for a full
 # release, have a section in CHANGELOG.md, which becomes the release notes - the
-# shared release workflows (unseenet#545, #42).
+# shared release workflows (unseenet#545, #42). Each release also carries
+# unseenet-entrance-<version>-server-requirements.txt and SHA256SUMS.txt; once the
+# project key has signed them (tools/project/sign_release.py --repo unseenet-entrance
+# <tag> in unseenet/unseenet), entrances whose operator turned it on update to it by
+# themselves (SELF_UPDATE=on in deploy/install.sh, unseenet/unseenet#827).
 # Versioning as in unseenet: https://github.com/unseenet/unseenet/blob/main/docs/development.md#versioning
 on:
   push:
@@ -13,6 +17,7 @@ jobs:
     uses: unseenet/.github/.github/workflows/release-build.yml@main
     with:
       package: unseenet_entrance
+      server: true             # the server requirements, for entrances that update themselves (#827)
 
   pypi:                        # here: PyPI's trusted publishing does not take reusable workflows
     needs: build
@@ -34,5 +39,6 @@ jobs:
     uses: unseenet/.github/.github/workflows/release-github.yml@main
     with:
       title: "Unseenet entrance"
+      server: true
     permissions:
       contents: write

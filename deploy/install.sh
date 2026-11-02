@@ -28,8 +28,17 @@
 # The web client (unseenet-gui in the browser): the newest signed version,
 # found through the network (UN-RFC 0043 section 7.2), the same files as every
 # other entrance. It then updates itself when a newer one is posted; set
-# ENTRANCE_AUTO_UPDATE=off in the settings to stop that. The entrance's own code
-# is never updated by itself: run this script again for that.
+# ENTRANCE_AUTO_UPDATE=off in the settings to stop that.
+#
+# The entrance's own code is updated only when you turn that on (UN-RFC 0043 7.3):
+#   SELF_UPDATE=on      update it from its newest release the project key signed, a
+#                       random time of up to 48 hours after it is out, checked
+#                       against the signed hashes, never to an older version, and
+#                       back to the one before if it does not answer afterwards
+#                       (unseenet/unseenet#827; needs core 0.8 or newer)
+#   SELF_UPDATE=off     turn it off again
+# Without it, a machine keeps what it had (off, when new): run this script again to
+# update by hand.
 #   BUILD=local         build the web client here instead (not signed)
 #
 # Also a mirror of Unseenet's releases, if you like (unseenet/unseenet#264): clients
@@ -203,6 +212,42 @@ LimitCORE=0
 [Install]
 WantedBy=multi-user.target
 EOF
+# The entrance's own code, updated by itself only when the operator turned that on
+# (SELF_UPDATE=on; UN-RFC 0043 7.3, unseenet/unseenet#827)
+UPDATER="$APP/.venv/bin/unseenet-service-update"
+if "$UPDATER" --help 2>/dev/null | grep -q -- --package; then
+  cat > /etc/systemd/system/unseenet-entrance-update.service <<EOF
+[Unit]
+Description=Update unseenet-entrance from its newest signed release
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$UPDATER run --service unseenet-entrance --package unseenet-entrance --check http://127.0.0.1:8043/.well-known/unseenet-entrance
+EOF
+  cat > /etc/systemd/system/unseenet-entrance-update.timer <<EOF
+[Unit]
+Description=Look for a new release of unseenet-entrance four times a day
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  case "${SELF_UPDATE:-}" in
+    on)  "$UPDATER" on --service unseenet-entrance >/dev/null
+         systemctl daemon-reload; systemctl enable -q --now unseenet-entrance-update.timer
+         echo "== the entrance updates itself from signed releases (SELF_UPDATE=off stops it)" ;;
+    off) "$UPDATER" off --service unseenet-entrance >/dev/null
+         systemctl disable -q --now unseenet-entrance-update.timer 2>/dev/null || true ;;
+  esac
+elif [ "${SELF_UPDATE:-}" = on ]; then
+  echo "!! SELF_UPDATE=on needs unseenet 0.8 or newer in the entrance; it is not set up."
+fi
 systemctl daemon-reload
 systemctl enable -q unseenet-entrance
 

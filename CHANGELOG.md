@@ -11,6 +11,12 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ### Added
 
+- **The entrance can update its own code, when its operator turns that on**
+  (unseenet/unseenet#827, UN-RFC 0043 section 7.3, 0062 section 6.1): each release carries its
+  server requirements and `SHA256SUMS.txt`, and `SELF_UPDATE=on` in `deploy/install.sh` sets up
+  a timer that updates to the newest release the project key signed, checks that the entrance
+  answers afterwards, and goes back if not (with a core that has `unseenet-service-update
+  --package`, 0.8 or newer). Off unless turned on; `SELF_UPDATE=off` turns it off again.
 - **`ENTRANCE_KEY`: the entrance names the key it announced itself with** to a list council
   (UN-RFC 0020 section 5.1, unseenet/unseenet#861), and the publisher whose web client it
   serves, in `/.well-known/unseenet-entrance`, so the council's replicas know the announcement
