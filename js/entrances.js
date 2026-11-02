@@ -4,6 +4,7 @@
 // is trusted until its signatures check out against the pinned owner key.
 import { Article, keyFromText, manifestData, splitGroupId, fingerprint } from "./article.js";
 import { b64decode } from "./encoding.js";
+import { countChain, updatedDay } from "./council.js";
 
 export const PROJECT_KEY = "ed25519:det5dxevwbk36eds2indrzlazyri3fq3bgdzw6kx4ems3o267sya";
 export const PROJECT_GROUP = "unseenet.entrances@ph5fc5hop5232qsz";
@@ -37,6 +38,11 @@ export function parseList(text, strict = true) {
  * [{art, date, signer}], or throws, saying why. ``what`` names the group in messages.
  */
 export function signedPosts(bundle, ownerKey, group, what = "list") {
+  return signedGroup(bundle, ownerKey, group, what).posts;
+}
+
+/** The checked manifest data and posts of a bundle: {manifest, posts}, or throws. */
+export function signedGroup(bundle, ownerKey, group, what = "list") {
   if (!bundle || bundle.group !== group) throw new Error(`not the ${what} this page trusts`);
   if (!bundle.manifest) throw new Error(`the entrance has no copy of the ${what} yet`);
   const [, fp] = splitGroupId(group);
@@ -52,7 +58,47 @@ export function signedPosts(bundle, ownerKey, group, what = "list") {
     if (art.group !== group || !art.verify() || !signers.has(art.get("Author-Key"))) continue;
     out.push({ art, date: new Date(art.get("Date") || 0), signer: art.get("Author-Key") });
   }
-  return out;
+  return { manifest: m, posts: out };
+}
+
+/**
+ * The newest list a list council's members posted (UN-RFC 0020 section 8), from what an
+ * entrance serves beside the project's group once that has moved (``moved_to``, section
+ * 10): {group, copies, list, posts}, raw articles in base64. The council's chain is
+ * counted here from its members' own copies - its Group ID pins the genesis - so no key
+ * is trusted but the ones it names. Returns {updated, entrances, date, signer} or null.
+ */
+export function councilList(c, group, kind = "entrances") {
+  if (!c || c.group !== group || !Array.isArray(c.copies)) return null;
+  const copies = [];
+  for (const raw of c.copies) {
+    let art;
+    try { art = Article.fromBytes(b64decode(raw)); } catch { continue; }
+    if (art.group !== group || String(art.get("Control") || "").trim().toLowerCase() !== "manifest") continue;
+    if (!art.verify()) continue;
+    copies.push({ author: art.get("Author-Key"), body: art.body });
+  }
+  const chain = countChain(group, copies);
+  if (!chain.current || chain.disputed) return null;
+  const lists = (chain.current.data && chain.current.data.lists) || {};
+  if (!lists[kind] || lists[kind] !== c.list) return null;
+  const members = new Set(chain.current.keys);
+  let best = null;
+  for (const raw of c.posts || []) {
+    let art, list;
+    try { art = Article.fromBytes(b64decode(raw)); } catch { continue; }
+    if (art.group !== c.list || !art.verify() || !members.has(art.get("Author-Key"))) continue;
+    try { list = parseList(art.body, true); } catch { continue; }
+    const day = updatedDay(list.updated);
+    if (!day) continue;
+    const date = new Date(art.get("Date") || 0);
+    if (!best || day.day > best.day || (day.day === best.day && date > best.date)) {
+      best = { ...list, date, signer: art.get("Author-Key"), day: day.day };
+    }
+  }
+  if (!best) return null;
+  delete best.day;
+  return best;
 }
 
 /**
@@ -61,8 +107,16 @@ export function signedPosts(bundle, ownerKey, group, what = "list") {
  */
 export function verifyBundle(bundle, ownerKey = PROJECT_KEY, group = PROJECT_GROUP) {
   const strict = group === PROJECT_GROUP;
+  const { manifest, posts } = signedGroup(bundle, ownerKey, group);
+  // UN-RFC 0020 section 10: the list moved to a list council; its own list is read
+  // from then on, the old group's only until the council has posted one
+  const moved = typeof manifest.moved_to === "string" ? manifest.moved_to : null;
+  if (moved) {
+    const fromCouncil = councilList(bundle.council, moved);
+    if (fromCouncil) return fromCouncil;
+  }
   let best = null;
-  for (const { art, date, signer } of signedPosts(bundle, ownerKey, group)) {
+  for (const { art, date, signer } of posts) {
     let list;
     try { list = parseList(art.body, strict); } catch { continue; }
     if (!best || date > best.date) best = { ...list, date, signer };
