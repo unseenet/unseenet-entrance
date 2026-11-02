@@ -9,6 +9,14 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Running `deploy/install.sh` again keeps the HTTPS choice.** Without `TLS=` it used to
+  mean `auto`, so updating an entrance installed with `TLS=both:NAME` or `TLS=domain:NAME`
+  by hand swapped its certificate for one with only the IP address, and the name stopped
+  working. The choice is now kept in `/etc/unseenet-entrance/tls-choice`; an entrance
+  installed before that reads it from the certificate it has.
+
 ### Added
 
 - **The entrance can update its own code, when its operator turns that on**
