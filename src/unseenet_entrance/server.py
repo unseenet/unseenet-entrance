@@ -143,6 +143,10 @@ class Config:
             "copy": c.copy,                  # UN-RFC 0043 4.3, 4.5
             "software": f"unseenet-entrance {__version__}",
         }
+        key = e("ENTRANCE_KEY", "").strip()
+        if KEY_RE.match(key):    # the key it announces itself with to a list council (#861)
+            c.info["key"] = key
+            c.info["publisher"] = c.release_group
         claim = e("ENTRANCE_CLAIM", "").strip()
         if claim:            # "Add my entrance": shows the asker runs it (#3), then remove
             c.info["claim"] = claim[:200]
@@ -157,6 +161,7 @@ class Config:
         return found | set(self.extra_nodes)
 
 
+KEY_RE = re.compile(r"^ed25519:[a-z2-7]{52}$")
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{22,64}$")   # a session tag (UN-RFC 0043 4.1.1)
 
 

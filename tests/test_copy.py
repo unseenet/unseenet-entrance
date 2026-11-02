@@ -132,3 +132,16 @@ async def test_open_tunnel_tries_again_after_each_pause(monkeypatch):
     with pytest.raises(ProxyError):
         await srv.open_tunnel(srv.Config(), ONION, port=9119, pauses=(1, 2, 3))
     assert len(tries) == 4 and slept == [1, 2, 3]
+
+
+def test_it_names_the_key_it_announces_itself_with(monkeypatch):
+    """UN-RFC 0020 section 5.1 (unseenet#861): an entrance announced to a list council
+    names that key, and the publisher it serves, in /.well-known/unseenet-entrance."""
+    key = "ed25519:det5dxevwbk36eds2indrzlazyri3fq3bgdzw6kx4ems3o267sya"
+    monkeypatch.setenv("ENTRANCE_KEY", key)
+    c = srv.Config.from_env()
+    assert c.info["key"] == key and c.info["publisher"] == c.release_group
+    monkeypatch.setenv("ENTRANCE_KEY", "not a key")
+    assert "key" not in srv.Config.from_env().info
+    monkeypatch.delenv("ENTRANCE_KEY")
+    assert "key" not in srv.Config.from_env().info
