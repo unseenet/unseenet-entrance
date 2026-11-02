@@ -11,6 +11,15 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ### Fixed
 
+- **Pictures in the web client** (unseenet/unseenet#912, UN-RFC 0027 section 9.2): pictures
+  from the network - link cards, pictures in posts, profile pictures - are decoded by the
+  browser's own decoder in a worker of their own, which is given nothing but the file
+  (never the vault) and saves it again from its pixels only (no metadata; turned as the
+  file says; an animation shows its first frame). Before, Pyodide could not start the
+  core's decoding process, and a link card showed `NotImplementedError: subprocess_exec()
+  ...` instead of its picture. The worker loads no Pyodide, ends a picture that takes too
+  long, and gives its memory back after a minute without pictures. Works with the core of
+  today and with one that has `decode.elsewhere`.
 - **Running `deploy/install.sh` again keeps the HTTPS choice.** Without `TLS=` it used to
   mean `auto`, so updating an entrance installed with `TLS=both:NAME` or `TLS=domain:NAME`
   by hand swapped its certificate for one with only the IP address, and the name stopped

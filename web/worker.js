@@ -14,6 +14,12 @@
 // minutes to hours. Pyodide has no threads, so a segment in the backend would
 // stop everything else; in a worker of its own it doesn't, and stopping it is
 // terminating that worker.
+//
+// And the picture worker (init.role "picture", UN-RFC 0027 section 9.2): Pyodide
+// cannot start the separate process the core decodes pictures from the network
+// in, so the browser's own decoder does it here, in a worker that is given
+// nothing but the file - never the vault - and saves it again from its pixels
+// only. It loads no Pyodide, so it costs next to nothing on a phone.
 import { loadPyodide as servedPyodide } from "./pyodide/pyodide.mjs";   // FILE
 const HERE = import.meta.url;                                           // FILE
 let loadPyodide = servedPyodide;
@@ -75,7 +81,7 @@ async function start(init) {
     u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
     ws = u.href;
   }
-  wb.start(ws, (s) => self.postMessage(s), ripening);
+  wb.start(ws, (s) => self.postMessage(s), ripening, pictures);
   post({ type: "ready" });
 }
 
@@ -166,6 +172,115 @@ prove`);
   }
 }
 
+// --- pictures from the network, in a worker of their own ---
+// webbackend calls pictures.decode(octets, type, ms): {bytes, type, width, height}
+// or {error}. A picture that takes longer than ms ends the worker (the next one
+// starts afresh), as the core kills a decoding process that takes too long.
+let picturer = null;           // { worker, ready } while one runs
+let pictureSeq = 0;
+const pictureWaiting = new Map();      // id -> resolve
+let pictureIdle = null;
+
+function pictureWorker() {
+  if (picturer) return picturer;
+  const worker = new Worker(HERE, { type: "module" });
+  const ready = new Promise((resolve, reject) => {
+    worker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === "picture-ready") resolve();
+      else if (m.type === "decoded") {
+        const done = pictureWaiting.get(m.id);
+        pictureWaiting.delete(m.id);
+        if (done) done(m.error ? { error: m.error } : m.picture);
+        if (!pictureWaiting.size) idleLater();
+      }
+    };
+    worker.onerror = (e) => {
+      reject(new Error(e.message || "the picture worker stopped"));
+      endPictures("this picture could not be read");
+    };
+  });
+  worker.postMessage({ type: "init", role: "picture" });
+  picturer = { worker, ready };
+  return picturer;
+}
+
+function endPictures(error) {
+  if (picturer) picturer.worker.terminate();
+  picturer = null;
+  for (const done of pictureWaiting.values()) done({ error });
+  pictureWaiting.clear();
+}
+
+function idleLater() {         // a worker nobody uses gives its memory back
+  clearTimeout(pictureIdle);
+  pictureIdle = setTimeout(() => { if (!pictureWaiting.size) endPictures(null); }, 60000);
+}
+
+const pictures = {
+  async decode(octets, type, ms) {
+    clearTimeout(pictureIdle);
+    const id = ++pictureSeq;
+    const answer = new Promise((resolve) => pictureWaiting.set(id, resolve));
+    const timer = setTimeout(() => {
+      if (pictureWaiting.has(id)) endPictures("this picture took too long to read");
+    }, ms);
+    try {
+      const p = pictureWorker();
+      await p.ready;
+      // a copy: the worker gets this file and nothing else
+      const bytes = new Uint8Array(octets);
+      p.worker.postMessage({ type: "decode", id, bytes, mediaType: type }, [bytes.buffer]);
+    } catch (err) {
+      const done = pictureWaiting.get(id);
+      pictureWaiting.delete(id);
+      if (done) done({ error: "this picture could not be read" });
+    }
+    try { return await answer; } finally { clearTimeout(timer); }
+  },
+};
+
+const MAX_PIXELS = 50_000_000;                  // as unseenet.client.decode
+const SAVED_AS = { "image/jpeg": "image/jpeg", "image/webp": "image/webp" };   // else PNG
+
+async function cleanPicture(bytes, mediaType) {
+  let bmp;
+  try {
+    bmp = await createImageBitmap(new Blob([bytes], { type: mediaType }),
+                                  { imageOrientation: "from-image" });
+  } catch {
+    throw new Error("this picture could not be read");
+  }
+  try {
+    if (bmp.width * bmp.height > MAX_PIXELS) {
+      throw new Error("this picture is too large to show (over 50 megapixels)");
+    }
+    const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+    canvas.getContext("2d").drawImage(bmp, 0, 0);
+    // pixels only: nothing of the file but what it shows (an animation: its first frame)
+    const blob = await canvas.convertToBlob({ type: SAVED_AS[mediaType] || "image/png", quality: 0.9 });
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), type: blob.type,
+             width: bmp.width, height: bmp.height };
+  } finally {
+    bmp.close();
+  }
+}
+
+function startPictures() {
+  self.onmessage = async (e) => {
+    const m = e.data;
+    if (m.type !== "decode") return;
+    try {
+      const out = await cleanPicture(m.bytes, m.mediaType);
+      self.postMessage({ type: "decoded", id: m.id, picture: out }, [out.bytes.buffer]);
+    } catch (err) {
+      self.postMessage({ type: "decoded", id: m.id,
+        error: String(err && err.message || err) || "this picture could not be read" });
+    }
+  };
+  self.postMessage({ type: "picture-ready" });
+}
+
 async function handle(m) {
   try {
     if (m.type === "api") {
@@ -197,6 +312,10 @@ self.onmessage = async (e) => {
   const m = e.data;
   if (m.type === "init" && m.role === "ripen") {
     startRipener(m);
+    return;
+  }
+  if (m.type === "init" && m.role === "picture") {
+    startPictures();
     return;
   }
   if (m.type === "init") {
