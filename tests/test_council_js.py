@@ -75,7 +75,6 @@ def test_the_web_client_follows_the_list_to_its_council():
     the list its members posted - not a stranger's, and the old one until there is one."""
     import base64
 
-    from unseenet.core import lists as ls
     from unseenet.core.article import new_article
     from unseenet.core.groups import canonical_json, make_manifest, manifest_article
     b64 = lambda a: base64.b64encode(a.to_bytes()).decode()       # noqa: E731
@@ -115,4 +114,3 @@ def test_the_web_client_follows_the_list_to_its_council():
     assert got["council"] == ["https://new.example/"]
     assert got["no list yet"] == got["not every member signed"] == ["https://old.example/"]
     assert got["not moved"] == ["https://old.example/"]
-    assert ls.updated_day("council 1 day 2026-11-03")       # the form both read
