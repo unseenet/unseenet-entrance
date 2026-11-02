@@ -9,8 +9,15 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-02
+
+On core 0.7, and the web client built from core 0.7.0 and the graphical client 0.6.0. Needs unseenet 0.7 (`unseenet>=0.7,<0.8`): update the nodes first.
+
 ### Changed
 
+- **The web client is built from the graphical client 0.6.0** (was 0.3.3) and core 0.7.0:
+  the browser gets the same interface as the desktop - sharing, public name claims - and
+  every entrance updates to it by itself.
 - Runs on core 0.7 (`unseenet>=0.7,<0.8`): announced nodes, councils and servers that update themselves.
 
 - **The groups are there when you come back** (#68): with the vault kept on this device, the
@@ -221,7 +228,8 @@ nodes (unseenet-gui#31).
 - Release articles go through the core's `Session` and never ripen in CI:
   they take over the key's published chain (#17).
 
-[Unreleased]: https://github.com/unseenet/unseenet-entrance/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/unseenet/unseenet-entrance/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/unseenet/unseenet-entrance/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/unseenet/unseenet-entrance/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/unseenet/unseenet-entrance/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/unseenet/unseenet-entrance/compare/v0.1.0...v0.2.0
