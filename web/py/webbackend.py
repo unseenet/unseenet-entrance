@@ -12,6 +12,9 @@ client:
   their own instead (``_patch_ripening``, #27);
 - the vault lives in the worker's memory; the page opens and saves it as a file.
 
+With a core before unseenet#916 a group is also read with fewer round trips here
+(``_patch_reading``), since over the entrance each one is a round trip through Tor.
+
 Requests from the page are answered by the same aiohttp application the
 portable client serves on 127.0.0.1, so the two cannot drift apart.
 """
@@ -131,6 +134,94 @@ def _patch_pictures(pictures_js) -> None:
     decode.picture_async = picture_async
 
 
+def _patch_reading() -> None:
+    """Read a group in fewer round trips (unseenet#916): with a core before that fix,
+    each article of a group was its own ``ARTICLE`` and a new reader saw their groups
+    empty for a minute or more. As the core now does: the articles of each turn are
+    asked for at once (RFC 3977 section 3.5), a connection broken off part-way is never
+    used again, and the group the reader has open is fetched first. A core with
+    ``Client.articles`` does all this itself and is left as it is."""
+    from unseenet import nntp
+    from unseenet.client import runtime, session
+    from unseenet.client.localapi.api import groups
+
+    if hasattr(nntp.Client, "articles"):
+        return
+
+    async def articles(self, idents):
+        if not idents:
+            return []
+        out = []
+        try:
+            self.writer.write(b"".join(f"ARTICLE {i}\r\n".encode() for i in idents))
+            await self.writer.drain()
+            for _ in idents:
+                code, text = await self._response()
+                if code == 400:
+                    raise nntp.NNTPError(code, text)
+                out.append(await nntp.read_block(self.reader) if code == 220 else None)
+        except BaseException as exc:
+            try:
+                self.writer.close()
+            except Exception:  # noqa: BLE001
+                pass
+            if isinstance(exc, (ConnectionError, OSError, asyncio.IncompleteReadError,
+                                asyncio.CancelledError, nntp.NNTPError)):
+                raise
+            raise ConnectionError(f"answers broken off: {exc}") from exc
+        return out
+
+    nntp.Client.articles = articles
+
+    async def fetch_numbers(self, group_id, numbers, node):
+        fetched = []
+        for i in range(0, len(numbers), self.FETCH_BATCH):
+            chunk = numbers[i:i + self.FETCH_BATCH]
+
+            async def run(c, chunk=chunk):
+                try:
+                    await c.group(group_id)
+                except nntp.NNTPError as exc:
+                    raise session.SessionError("group not carried by this node") from exc
+                raws = await c.articles([str(n) for n in chunk])
+                return [(n, raw) for n, raw in zip(chunk, raws) if raw is not None]
+            try:
+                fetched += await self._call(run, node)
+            except (session.SessionError, OSError, ConnectionError,
+                    asyncio.IncompleteReadError):
+                if not fetched:
+                    raise
+                return fetched, chunk[0]
+        return fetched, None
+
+    session.Session._fetch_numbers = fetch_numbers
+    session.Session.reading_now = None
+
+    async def fetch(self, group_ids):
+        done = set()
+        todo = list(group_ids)
+        while todo:
+            now = getattr(self.session, "reading_now", None)
+            gid = todo.pop(todo.index(now)) if now in todo else todo.pop(0)
+            if self.session.is_slow(self.session.node_for(gid)):
+                continue
+            try:
+                await self.session.fetch_group(gid)
+            except runtime.NETWORK_ERRORS:
+                pass
+            done.add(gid)
+        return done
+
+    runtime.ClientRuntime._fetch = fetch
+    view = groups.Groups._group_view
+
+    def group_view(self, gid, *args, **kwargs):
+        self.session.reading_now = gid       # only groups you follow are fetched by it
+        return view(self, gid, *args, **kwargs)
+
+    groups.Groups._group_view = group_view
+
+
 def _patch_network(entrance_url: str) -> None:
     import webtransport
     from unseenet.client import session
@@ -226,6 +317,7 @@ def start(entrance_url: str, post_message, ripening_js=None, pictures_js=None) -
         _patch_ripening(ripening_js)
     if pictures_js is not None:
         _patch_pictures(pictures_js)
+    _patch_reading()
     _patch_network(entrance_url)
     _patch_vault()
     from unseenet_gui.server import build

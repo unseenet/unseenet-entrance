@@ -11,6 +11,11 @@ in `unseenet.releases`); this file is about the entrance that serves it.
 
 ### Fixed
 
+- **Groups fill quickly in the web client** (unseenet/unseenet#916): with a core before
+  that fix (the web client is built with v0.7.0), `webbackend` asks for the articles of
+  each turn of a read at once instead of one at a time - one round trip through the
+  entrance and Tor, not fifty - drops a connection whose answers broke off part-way, and
+  fetches the group the reader has open first. A core with the fix does it itself.
 - **Pictures in the web client** (unseenet/unseenet#912, UN-RFC 0027 section 9.2): pictures
   from the network - link cards, pictures in posts, profile pictures - are decoded by the
   browser's own decoder in a worker of their own, which is given nothing but the file
